@@ -16,9 +16,16 @@ from typing import Optional, Dict, Any
 import httpx
 import json
 from datetime import datetime
+from loguru import logger
 
 from valuecell.plugins.nautilus.signals import TradingSignal, SignalResult, SignalAction
 from valuecell.plugins.nautilus.execution_bridge import ExecutionBridge
+from valuecell.plugins.nautilus.constants import (
+    DEFAULT_HTTP_TIMEOUT,
+    DEFAULT_AGENT_ID,
+    DEFAULT_VALUECELL_URL
+)
+from valuecell.plugins.nautilus import exceptions
 
 
 class RealValueCellBridge(ExecutionBridge):
@@ -34,8 +41,8 @@ class RealValueCellBridge(ExecutionBridge):
     
     def __init__(
         self,
-        valuecell_url: str = "http://localhost:8000",
-        agent_id: str = "nautilus_strategy_agent",
+        valuecell_url: str = DEFAULT_VALUECELL_URL,
+        agent_id: str = DEFAULT_AGENT_ID,
         api_key: Optional[str] = None,
         dry_run: bool = True
     ):
@@ -56,7 +63,7 @@ class RealValueCellBridge(ExecutionBridge):
         # HTTP client for API calls
         self.client = httpx.AsyncClient(
             headers=self._get_headers(),
-            timeout=30.0
+            timeout=DEFAULT_HTTP_TIMEOUT
         )
         
         # Track execution state
@@ -64,11 +71,12 @@ class RealValueCellBridge(ExecutionBridge):
         self.positions = {}
         self._initialized = False
         
-        print(f"🔗 RealValueCellBridge initialized:")
-        print(f"   URL: {valuecell_url}")
-        print(f"   Agent: {agent_id}")
-        print(f"   Mode: {'DRY RUN (Paper)' if dry_run else 'LIVE TRADING ⚠️'}")
-        print()
+        logger.info(
+            "RealValueCellBridge initialized",
+            url=valuecell_url,
+            agent=agent_id,
+            mode="paper" if dry_run else "live"
+        )
     
     def _get_headers(self) -> Dict[str, str]:
         """Get HTTP headers for API requests."""
@@ -97,16 +105,22 @@ class RealValueCellBridge(ExecutionBridge):
             response = await self.client.get(f"{self.valuecell_url}/health")
             
             if response.status_code == 200:
-                print("✅ Connected to ValueCell backend")
+                logger.info("Connected to ValueCell backend", url=self.valuecell_url)
                 self._initialized = True
                 return True
             else:
-                print(f"⚠️  ValueCell returned status {response.status_code}")
+                logger.warning("ValueCell health check failed", status_code=response.status_code)
                 return False
                 
+        except httpx.ConnectError as e:
+            logger.warning(
+                "Could not connect to ValueCell - continuing in offline mode",
+                url=self.valuecell_url,
+                error=str(e)
+            )
+            return False
         except Exception as e:
-            print(f"❌ Failed to connect to ValueCell: {e}")
-            print(f"   Make sure ValueCell is running at {self.valuecell_url}")
+            logger.error("Unexpected error connecting to ValueCell", error=str(e))
             return False
     
     async def execute_signal(self, signal: TradingSignal) -> SignalResult:
@@ -162,7 +176,7 @@ class RealValueCellBridge(ExecutionBridge):
                 return None
                 
         except Exception as e:
-            print(f"❌ Failed to get position: {e}")
+            logger.error("Failed to get position", symbol=symbol, error=str(e))
             return None
     
     def _signal_to_order(self, signal: TradingSignal) -> Dict[str, Any]:
@@ -232,10 +246,14 @@ class RealValueCellBridge(ExecutionBridge):
        
         self.orders.append(order)
         
-        print(f"📝 Paper Order Executed:")
-        print(f"   Order ID: {order_id}")
-        print(f"   {order_params['side'].upper()} {order_params['quantity']} {order_params['symbol']}")
-        print(f"   Reason: {signal.reason}")
+        logger.info(
+            "Paper order executed",
+            order_id=order_id,
+            side=order_params['side'],
+            quantity=order_params['quantity'],
+            symbol=order_params['symbol'],
+            reason=signal.reason
+        )
         
         return SignalResult(
             signal_id=signal.signal_id,
@@ -272,9 +290,13 @@ class RealValueCellBridge(ExecutionBridge):
                 result = response.json()
                 order_id = result.get("order_id")
                 
-                print(f"✅ Live Order Executed:")
-                print(f"   Order ID: {order_id}")
-                print(f"   {order_params['side'].upper()} {order_params['quantity']} {order_params['symbol']}")
+                logger.info(
+                    "Live order executed",
+                    order_id=order_id,
+                    side=order_params['side'],
+                    quantity=order_params['quantity'],
+                    symbol=order_params['symbol']
+                )
                 
                 return SignalResult(
                     signal_id=signal.signal_id,
@@ -284,7 +306,11 @@ class RealValueCellBridge(ExecutionBridge):
                 )
             else:
                 error_msg = f"ValueCell returned {response.status_code}: {response.text}"
-                print(f"❌ Live Order Failed: {error_msg}")
+                logger.error(
+                    "Live order execution failed",
+                    status_code=response.status_code,
+                    response=response.text
+                )
                 
                 return SignalResult(
                     signal_id=signal.signal_id,
@@ -293,8 +319,7 @@ class RealValueCellBridge(ExecutionBridge):
                 )
                 
         except Exception as e:
-            error_msg = f"Live execution error: {str(e)}"
-            print(f"❌ {error_msg}")
+            logger.exception("Live execution error", error=str(e))
             
             return SignalResult(
                 signal_id=signal.signal_id,
@@ -305,7 +330,7 @@ class RealValueCellBridge(ExecutionBridge):
     async def close(self):
         """Close the bridge and cleanup resources."""
         await self.client.aclose()
-        print("🔒 RealValueCellBridge closed")
+        logger.info("RealValueCellBridge closed")
     
     def get_order_history(self) -> list:
         """Get all executed orders."""
