@@ -1,0 +1,79 @@
+{
+    "name": "NautilusHybridAgent",
+    "display_name": "Nautilus Hybrid Agent",
+    "url": "http://localhost:10005/",
+    "description": "Hybrid trading agent combining LLM-driven market analysis with rule-based strategy execution. Features intelligent strategy selection from EMA, RSI, and Bollinger Bands strategies based on market conditions.",
+    "skills": [
+        {
+            "id": "hybrid_trading",
+            "name": "Hybrid Trading (LLM + Rules)",
+            "description": "LLM analyzes market conditions and selects the optimal rule-based strategy (EMA/RSI/BB) for execution.",
+            "examples": [
+                "Use hybrid mode to trade BTC-USDT with automatic strategy selection",
+                "Analyze market and choose between trend-following and mean reversion strategies"
+            ],
+            "tags": [
+                "hybrid",
+                "llm",
+                "strategy-selection",
+                "adaptive"
+            ]
+        },
+        {
+            "id": "llm_trading",
+            "name": "Pure LLM Trading",
+            "description": "LLM directly analyzes market data and generates trade decisions without predefined rules.",
+            "examples": [
+                "Use LLM to analyze BTC market and make trading decisions",
+                "Trade ETH-USDT with pure AI-driven decisions"
+            ],
+            "tags": [
+                "llm",
+                "ai-trading",
+                "dynamic"
+            ]
+        },
+        {
+            "id": "rule_trading",
+            "name": "Rule-Based Trading",
+            "description": "Execute a fixed rule-based strategy (EMA/RSI/BB) consistently without LLM intervention.",
+            "examples": [
+                "Trade BTC-USDT using EMA crossover strategy",
+                "Apply RSI mean reversion to ETH-USDT",
+                "Use Bollinger Bands reversal strategy for volatile markets"
+            ],
+            "tags": [
+                "ema",
+                "rsi",
+                "bollinger-bands",
+                "technical-analysis"
+            ]
+        },
+        {
+            "id": "strategy_switching",
+            "name": "Adaptive Strategy Switching",
+            "description": "In hybrid mode, dynamically switch between strategies as market conditions change.",
+            "examples": [
+                "Switch from EMA to RSI when market becomes ranging",
+                "Adapt strategy based on volatility and trend strength"
+            ],
+            "tags": [
+                "adaptive",
+                "dynamic",
+                "market-conditions"
+            ]
+        }
+    ],
+    "enabled": true,
+    "metadata": {
+        "version": "1.0.0",
+        "author": "ValueIn Team",
+        "tags": [
+            "trading",
+            "hybrid",
+            "strategy",
+            "crypto"
+        ],
+        "local_agent_class": "valuecell.agents.nautilus_hybrid_agent.core:NautilusHybridAgent"
+    }
+}

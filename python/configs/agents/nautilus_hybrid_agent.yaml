@@ -1,0 +1,70 @@
+# ============================================
+# Nautilus Hybrid Agent Configuration
+# ============================================
+# The Nautilus Hybrid Agent combines LLM intelligence with rule-based trading strategies.
+# It provides three decision modes: LLM, Rule, and Hybrid (LLM selects strategy).
+# ============================================
+# Configuration Priority (highest to lowest):
+# 1. Environment Variables (highest priority)
+# 2. .env file
+# 3. YAML files (lowest priority, system defaults)
+# ============================================
+
+name: "Nautilus Hybrid Agent"
+enabled: true
+
+# Model Configuration
+# Nautilus Agent uses models for market analysis and strategy selection in hybrid mode
+models:
+  # Primary model for strategy selection and market analysis
+  primary:
+    model_id: "google/gemini-2.5-flash"
+    provider: "openrouter"
+    
+   
+ # Provider-specific model mappings for fallback
+    provider_models:
+      siliconflow: "Qwen/Qwen3-235B-A22B-Thinking-2507"
+      google: "gemini-2.5-flash"
+    
+    parameters:
+      # temperature: 0.5  # Balanced between creativity and consistency
+      # max_tokens: 2048  # Sufficient for strategy analysis
+
+# Environment Variable Overrides
+# Format: ENV_VAR_NAME -> config.path
+env_overrides:
+  # Primary model overrides
+  NAUTILUS_AGENT_MODEL_ID: "models.primary.model_id"
+  NAUTILUS_AGENT_PROVIDER: "models.primary.provider"
+  NAUTILUS_AGENT_TEMPERATURE: "models.primary.parameters.temperature"
+  NAUTILUS_AGENT_MAX_TOKENS: "models.primary.parameters.max_tokens"
+
+# Nautilus Agent Capabilities
+capabilities:
+  # Decision modes
+  decision_modes:
+    enabled: true
+    modes: ["llm", "rule", "hybrid"]
+    default: "hybrid"
+  
+  # Available strategies
+  strategies:
+    enabled: true
+    available:
+      - id: "ema_cross"
+        name: "EMA Crossover"
+        type: "trend_following"
+      - id: "rsi_mean_reversion"
+        name: "RSI Mean Reversion"
+        type: "mean_reversion"
+      - id: "bb_reversal"
+        name: "Bollinger Bands Reversal"
+        type: "mean_reversion"
+  
+  # Trading features
+  trading:
+    paper_trading: true
+    live_trading: true
+    supported_exchanges: ["binance", "okx"]
+    supported_instruments: ["crypto"]
