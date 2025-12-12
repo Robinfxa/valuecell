@@ -32,10 +32,8 @@ class StrategySummaryData(BaseModel):
     trading_mode: Optional[Literal["live", "virtual"]] = Field(
         None, description="Trading mode: live or virtual"
     )
-    unrealized_pnl: Optional[float] = Field(None, description="Unrealized PnL value")
-    unrealized_pnl_pct: Optional[float] = Field(
-        None, description="Unrealized PnL percentage"
-    )
+    total_pnl: Optional[float] = Field(None, description="Total PnL value")
+    total_pnl_pct: Optional[float] = Field(None, description="Total PnL percentage")
     created_at: Optional[datetime] = Field(None, description="Creation timestamp")
     exchange_id: Optional[str] = Field(
         None, description="Associated exchange identifier"
@@ -116,6 +114,9 @@ class StrategyPortfolioSummaryData(BaseModel):
     total_pnl: Optional[float] = Field(
         None,
         description="Combined realized and unrealized PnL for the snapshot",
+    )
+    total_pnl_pct: Optional[float] = Field(
+        None, description="Total PnL percentage for the snapshot"
     )
     gross_exposure: Optional[float] = Field(
         None, description="Aggregate gross exposure at snapshot"
@@ -235,3 +236,51 @@ class PromptCreateRequest(BaseModel):
 
 PromptListResponse = SuccessResponse[list[PromptItem]]
 PromptCreateResponse = SuccessResponse[PromptItem]
+
+
+class PromptDeleteResponse(BaseModel):
+    deleted: bool = Field(
+        ..., description="Whether the prompt was successfully deleted"
+    )
+    prompt_id: str = Field(..., description="ID of the deleted prompt")
+    message: str = Field(..., description="Delete operation result message")
+
+
+PromptDeleteSuccessResponse = SuccessResponse[PromptDeleteResponse]
+
+
+class StrategyPerformanceData(BaseModel):
+    """Performance overview for a strategy including ROI and config."""
+
+    strategy_id: str = Field(..., description="Strategy identifier")
+    initial_capital: Optional[float] = Field(
+        None, description="Initial capital used by the strategy"
+    )
+    return_rate_pct: Optional[float] = Field(
+        None, description="Return rate percentage relative to initial capital"
+    )
+    # Flattened config fields (only the requested subset)
+    llm_provider: Optional[str] = Field(
+        None, description="Model provider (e.g., openrouter, google, openai)"
+    )
+    llm_model_id: Optional[str] = Field(
+        None, description="Model identifier (e.g., deepseek-ai/deepseek-v3.1)"
+    )
+    exchange_id: Optional[str] = Field(None, description="Exchange identifier")
+    strategy_type: Optional[StrategyType] = Field(
+        None, description="Strategy type (PromptBasedStrategy/GridStrategy)"
+    )
+    trading_mode: Optional[Literal["live", "virtual"]] = Field(
+        None, description="Trading mode: live or virtual"
+    )
+    max_leverage: Optional[float] = Field(None, description="Maximum leverage")
+    symbols: Optional[List[str]] = Field(None, description="Symbols universe")
+    prompt_name: Optional[str] = Field(
+        None, description="Prompt template name used by the strategy"
+    )
+    prompt: Optional[str] = Field(
+        None, description="Final resolved prompt text used by the strategy"
+    )
+
+
+StrategyPerformanceResponse = SuccessResponse[StrategyPerformanceData]

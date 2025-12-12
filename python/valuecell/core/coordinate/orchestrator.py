@@ -7,6 +7,7 @@ from valuecell.core.constants import ORIGINAL_USER_INPUT, PLANNING_TASK
 from valuecell.core.conversation import ConversationService, ConversationStatus
 from valuecell.core.event import EventResponseService
 from valuecell.core.plan import PlanService
+from valuecell.core.plan.models import ExecutionPlan
 from valuecell.core.super_agent import (
     SuperAgentDecision,
     SuperAgentOutcome,
@@ -18,7 +19,7 @@ from valuecell.core.types import (
     StreamResponseEvent,
     UserInput,
 )
-from valuecell.utils.uuid import generate_task_id, generate_thread_id
+from valuecell.utils.uuid import generate_task_id, generate_thread_id, generate_uuid
 
 from .services import AgentServiceBundle
 
@@ -120,6 +121,10 @@ class AgentOrchestrator:
                 # Never fail producer due to queue issues; just drop
                 pass
 
+        logger.info(
+            "process_user_input: starting background session for conversation {}",
+            user_input.meta.conversation_id,
+        )
         # Start background producer
         asyncio.create_task(self._run_session(user_input, emit))
 
@@ -192,11 +197,19 @@ class AgentOrchestrator:
                 yield await self.event_service.emit(started)
 
             if conversation.status == ConversationStatus.REQUIRE_USER_INPUT:
+                logger.info(
+                    "_generate_responses: resuming conversation {} in REQUIRE_USER_INPUT",
+                    conversation_id,
+                )
                 async for response in self._handle_conversation_continuation(
                     user_input
                 ):
                     yield response
             else:
+                logger.info(
+                    "_generate_responses: handling new request for conversation {}",
+                    conversation_id,
+                )
                 async for response in self._handle_new_request(user_input):
                     yield response
 
@@ -295,9 +308,60 @@ class AgentOrchestrator:
 
         # 1) Super Agent triage phase (pre-planning) - skip if target agent is specified
         if user_input.target_agent_name == self.super_agent_service.name:
-            super_outcome: SuperAgentOutcome = await self.super_agent_service.run(
-                user_input
+            # Emit reasoning_started before streaming reasoning content
+            sa_task_id = generate_task_id()
+            sa_reasoning_item_id = generate_uuid("reasoning")
+            yield await self.event_service.emit(
+                self.event_service.factory.reasoning(
+                    conversation_id,
+                    thread_id,
+                    task_id=sa_task_id,
+                    event=StreamResponseEvent.REASONING_STARTED,
+                    agent_name=self.super_agent_service.name,
+                    item_id=sa_reasoning_item_id,
+                ),
             )
+
+            # Stream reasoning content and collect final outcome
+            super_outcome: SuperAgentOutcome | None = None
+            async for item in self.super_agent_service.run(user_input):
+                if isinstance(item, str):
+                    # Yield reasoning chunk
+                    yield await self.event_service.emit(
+                        self.event_service.factory.reasoning(
+                            conversation_id,
+                            thread_id,
+                            task_id=sa_task_id,
+                            event=StreamResponseEvent.REASONING,
+                            content=item,
+                            agent_name=self.super_agent_service.name,
+                            item_id=sa_reasoning_item_id,
+                        ),
+                    )
+                else:
+                    # SuperAgentOutcome received
+                    super_outcome = item
+
+            # Emit reasoning_completed
+            yield await self.event_service.emit(
+                self.event_service.factory.reasoning(
+                    conversation_id,
+                    thread_id,
+                    task_id=sa_task_id,
+                    event=StreamResponseEvent.REASONING_COMPLETED,
+                    agent_name=self.super_agent_service.name,
+                    item_id=sa_reasoning_item_id,
+                ),
+            )
+
+            # Fallback if no outcome was received
+            if super_outcome is None:
+                super_outcome = SuperAgentOutcome(
+                    decision=SuperAgentDecision.HANDOFF_TO_PLANNER,
+                    enriched_query=user_input.query,
+                    reason="No outcome received from SuperAgent",
+                )
+
             if super_outcome.answer_content:
                 ans = self.event_service.factory.message_response_general(
                     StreamResponseEvent.MESSAGE_CHUNK,
@@ -317,9 +381,18 @@ class AgentOrchestrator:
 
         # 2) Planner phase (existing logic)
         # Create planning task with user input callback
+        logger.info(
+            "_handle_new_request: starting planner for conversation {}, thread {}",
+            conversation_id,
+            thread_id,
+        )
         context_aware_callback = self._create_context_aware_callback(conversation_id)
         planning_task = self.plan_service.start_planning_task(
             user_input, thread_id, context_aware_callback
+        )
+        logger.info(
+            "_handle_new_request: planner task started for conversation {}",
+            conversation_id,
         )
 
         # Monitor planning progress
@@ -361,7 +434,25 @@ class AgentOrchestrator:
         conversation_id = user_input.meta.conversation_id
         user_id = user_input.meta.user_id
 
+        plan_task_id = generate_task_id()
+        plan_tool_call_id = generate_uuid("tool_call")
+        plan_tool_name = "generate_execution_plan"
+        yield await self.event_service.emit(
+            self.event_service.factory.tool_call(
+                conversation_id,
+                thread_id,
+                task_id=plan_task_id,
+                event=StreamResponseEvent.TOOL_CALL_STARTED,
+                tool_call_id=plan_tool_call_id,
+                tool_name=plan_tool_name,
+            )
+        )
+
         # Wait for planning completion or user input request
+        logger.info(
+            "_monitor_planning_task: monitoring planning task for conversation {}",
+            conversation_id,
+        )
         while not planning_task.done():
             if self.plan_service.has_pending_request(conversation_id):
                 # Save planning context
@@ -388,8 +479,28 @@ class AgentOrchestrator:
 
             await asyncio.sleep(ASYNC_SLEEP_INTERVAL)
 
+        logger.info(
+            "_monitor_planning_task: planning completed for conversation {}; executing plan",
+            conversation_id,
+        )
         # Planning completed, execute plan
-        plan = await planning_task
+        plan: "ExecutionPlan" = await planning_task
+
+        yield await self.event_service.emit(
+            self.event_service.factory.tool_call(
+                conversation_id,
+                thread_id,
+                task_id=plan_task_id,
+                event=StreamResponseEvent.TOOL_CALL_COMPLETED,
+                tool_call_id=plan_tool_call_id,
+                tool_name=plan_tool_name,
+                tool_result=(
+                    f"Reason: {plan.guidance_message}"
+                    if plan.guidance_message
+                    else "Completed"
+                ),
+            )
+        )
 
         # Set conversation title once if not set yet and a task title is available
         if getattr(plan, "tasks", None):

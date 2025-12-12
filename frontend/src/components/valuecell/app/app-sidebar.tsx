@@ -8,19 +8,23 @@ import {
 import { NavLink, useLocation } from "react-router";
 import { useGetAgentList } from "@/api/agent";
 import {
-  ChartBarVertical,
   Conversation,
   Logo,
+  Market,
+  Ranking,
   Setting,
   StrategyAgent,
 } from "@/assets/svg";
 import { Separator } from "@/components/ui/separator";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import AppConversationSheet from "@/components/valuecell/app/app-conversation-sheet";
+import AgentAvatar from "@/components/valuecell/icon/agent-avatar";
+import SvgIcon from "@/components/valuecell/icon/svg-icon";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import AgentAvatar from "./agent-avatar";
-import AppConversationSheet from "./app-conversation-sheet";
-import ScrollContainer from "./scroll/scroll-container";
-import SvgIcon from "./svg-icon";
 
 interface SidebarItemProps extends HTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
@@ -155,8 +159,14 @@ const AppSidebar: FC = () => {
           to: "/agent/StrategyAgent",
         },
         {
+          id: "ranking",
+          icon: Ranking,
+          label: "Ranking",
+          to: "/ranking",
+        },
+        {
           id: "market",
-          icon: ChartBarVertical,
+          icon: Market,
           label: "Market",
           to: "/market",
         },
@@ -212,32 +222,30 @@ const AppSidebar: FC = () => {
 
       <Separator className="w-10! bg-white" />
 
-      <SidebarContent className="max-h-[calc(100vh-11rem)]">
-        <ScrollContainer className="w-full">
-          <SidebarMenu className="py-3">
-            {agentItems?.map((item) => {
-              return (
-                <NavLink key={item.id} to={item.to}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <SidebarMenuItem
-                        type="agent"
-                        aria-label={item.label}
-                        data-active={verifyActive(item.to)}
-                      >
-                        <AgentAvatar agentName={item.id} />
-                      </SidebarMenuItem>
-                    </TooltipTrigger>
-                    <TooltipContent side="right">{item.label}</TooltipContent>
-                  </Tooltip>
-                </NavLink>
-              );
-            })}
-          </SidebarMenu>
-        </ScrollContainer>
+      <SidebarContent>
+        <SidebarMenu className="py-3">
+          {agentItems?.map((item) => {
+            return (
+              <NavLink key={item.id} to={item.to}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <SidebarMenuItem
+                      type="agent"
+                      aria-label={item.label}
+                      data-active={verifyActive(item.to)}
+                    >
+                      <AgentAvatar agentName={item.id} />
+                    </SidebarMenuItem>
+                  </TooltipTrigger>
+                  <TooltipContent side="right">{item.label}</TooltipContent>
+                </Tooltip>
+              </NavLink>
+            );
+          })}
+        </SidebarMenu>
       </SidebarContent>
 
-      <SidebarFooter className="mt-auto">
+      <SidebarFooter className="mt-auto pt-3">
         <SidebarMenu>
           {navItems.config.map((item) => {
             return (

@@ -8,7 +8,7 @@ and strategy details.
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import desc, func
+from sqlalchemy import asc, desc, func
 from sqlalchemy.orm import Session
 
 from ..connection import get_database_manager
@@ -231,7 +231,7 @@ class StrategyRepository:
                 session.close()
 
     def get_portfolio_snapshots(
-        self, strategy_id: str, limit: Optional[int] = None
+        self, strategy_id: str, limit: Optional[int] = None, descending: bool = True
     ) -> List[StrategyPortfolioView]:
         """Get aggregated portfolio snapshots for a strategy ordered by snapshot_ts desc."""
         session = self._get_session()
@@ -239,7 +239,11 @@ class StrategyRepository:
             query = (
                 session.query(StrategyPortfolioView)
                 .filter(StrategyPortfolioView.strategy_id == strategy_id)
-                .order_by(desc(StrategyPortfolioView.snapshot_ts))
+                .order_by(
+                    desc(StrategyPortfolioView.snapshot_ts)
+                    if descending
+                    else asc(StrategyPortfolioView.snapshot_ts)
+                )
             )
             if limit:
                 query = query.limit(limit)
@@ -251,11 +255,38 @@ class StrategyRepository:
             if not self.db_session:
                 session.close()
 
+    def get_first_portfolio_snapshot(
+        self, strategy_id: str
+    ) -> Optional[StrategyPortfolioView]:
+        """Convenience: return the earliest portfolio snapshot or None."""
+        session = self._get_session()
+        try:
+            item = (
+                session.query(StrategyPortfolioView)
+                .filter(StrategyPortfolioView.strategy_id == strategy_id)
+                .order_by(asc(StrategyPortfolioView.snapshot_ts))
+                .limit(1)
+                .first()
+            )
+            if item:
+                session.expunge(item)
+            return item
+        finally:
+            if not self.db_session:
+                session.close()
+
     def get_latest_portfolio_snapshot(
         self, strategy_id: str
     ) -> Optional[StrategyPortfolioView]:
         """Convenience: return the most recent portfolio snapshot or None."""
         items = self.get_portfolio_snapshots(strategy_id, limit=1)
+        return items[0] if items else None
+
+    def get_earliest_portfolio_snapshot(
+        self, strategy_id: str
+    ) -> Optional[StrategyPortfolioView]:
+        """Convenience: return the earliest portfolio snapshot or None."""
+        items = self.get_portfolio_snapshots(strategy_id, limit=1, descending=False)
         return items[0] if items else None
 
     def get_holdings_by_snapshot(
@@ -549,6 +580,34 @@ class StrategyRepository:
             if item:
                 session.expunge(item)
             return item
+        finally:
+            if not self.db_session:
+                session.close()
+
+    def delete_prompt(self, prompt_id: str) -> bool:
+        """Delete a prompt by prompt_id.
+
+        Returns True on success, False if the prompt does not exist or on error.
+        """
+        session = self._get_session()
+        try:
+            # Ensure the prompt exists
+            prompt = (
+                session.query(StrategyPrompt)
+                .filter(StrategyPrompt.id == prompt_id)
+                .first()
+            )
+            if not prompt:
+                return False
+
+            session.query(StrategyPrompt).filter(StrategyPrompt.id == prompt_id).delete(
+                synchronize_session=False
+            )
+            session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            return False
         finally:
             if not self.db_session:
                 session.close()

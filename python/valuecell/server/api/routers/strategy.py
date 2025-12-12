@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
-from valuecell.server.api.schemas.base import SuccessResponse
+from valuecell.server.api.schemas.base import StatusCode, SuccessResponse
 from valuecell.server.api.schemas.strategy import (
     StrategyCurveResponse,
     StrategyDetailResponse,
@@ -17,6 +17,7 @@ from valuecell.server.api.schemas.strategy import (
     StrategyHoldingFlatResponse,
     StrategyListData,
     StrategyListResponse,
+    StrategyPerformanceResponse,
     StrategyPortfolioSummaryResponse,
     StrategyStatusSuccessResponse,
     StrategyStatusUpdateResponse,
@@ -159,6 +160,18 @@ def create_strategy_router() -> APIRouter:
                         f"{stop_reason_detail if stop_reason_detail else ''}".strip()
                     ) or "..."
 
+                total_pnl, total_pnl_pct = 0.0, 0.0
+                if (
+                    portfolio_summary
+                    := await StrategyService.get_strategy_portfolio_summary(
+                        s.strategy_id
+                    )
+                ):
+                    total_pnl = to_optional_float(portfolio_summary.total_pnl) or 0.0
+                    total_pnl_pct = (
+                        to_optional_float(portfolio_summary.total_pnl_pct) or 0.0
+                    )
+
                 item = StrategySummaryData(
                     strategy_id=s.strategy_id,
                     strategy_name=s.name,
@@ -166,10 +179,8 @@ def create_strategy_router() -> APIRouter:
                     status=status,
                     stop_reason=stop_reason_display,
                     trading_mode=normalize_trading_mode(meta, cfg),
-                    unrealized_pnl=to_optional_float(meta.get("unrealized_pnl", 0.0)),
-                    unrealized_pnl_pct=to_optional_float(
-                        meta.get("unrealized_pnl_pct", 0.0)
-                    ),
+                    total_pnl=total_pnl,
+                    total_pnl_pct=total_pnl_pct,
                     created_at=s.created_at,
                     exchange_id=(meta.get("exchange_id") or cfg.get("exchange_id")),
                     model_id=(
@@ -196,6 +207,45 @@ def create_strategy_router() -> APIRouter:
         except Exception as e:
             raise HTTPException(
                 status_code=500, detail=f"Failed to retrieve strategy list: {str(e)}"
+            )
+
+    @router.get(
+        "/performance",
+        response_model=StrategyPerformanceResponse,
+        summary="Get strategy performance and configuration overview",
+        description=(
+            "Return ROI strictly from portfolio view equity (total_value) relative to initial capital; model/provider; and final prompt strictly from templates (no fallback)."
+        ),
+    )
+    async def get_strategy_performance(
+        id: str = Query(..., description="Strategy ID"),
+    ) -> StrategyPerformanceResponse:
+        try:
+            # Fail for explicitly invalid IDs (prefix 'invalid'), but do not raise 404
+            raw_id = (id or "").strip()
+            if raw_id.lower().startswith("invalid"):
+                # Return HTTP 400 for invalid IDs
+                raise HTTPException(
+                    status_code=StatusCode.BAD_REQUEST, detail="Invalid strategy id"
+                )
+
+            data = await StrategyService.get_strategy_performance(id)
+            if not data:
+                # Strategy not found: return HTTP 404
+                raise HTTPException(
+                    status_code=StatusCode.NOT_FOUND, detail="Strategy not found"
+                )
+
+            return SuccessResponse.create(
+                data=data,
+                msg="Successfully retrieved strategy performance and configuration",
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to retrieve strategy performance: {str(e)}",
             )
 
     @router.get(

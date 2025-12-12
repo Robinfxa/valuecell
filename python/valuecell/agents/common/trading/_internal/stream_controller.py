@@ -100,6 +100,8 @@ class StreamController:
         Logs and swallows errors to keep controller resilient.
         """
         try:
+            # Check if this is the first-ever snapshot before persisting
+            is_first_snapshot = not self.has_initial_state()
             initial_portfolio = runtime.coordinator.portfolio_service.get_view()
             try:
                 initial_portfolio.strategy_id = self.strategy_id
@@ -118,6 +120,66 @@ class StreamController:
             if ok:
                 logger.info(
                     "Persisted initial strategy summary for strategy={}",
+                    self.strategy_id,
+                )
+
+            # When running in LIVE mode, update DB config.initial_free_cash to exchange available balance
+            # and record initial capital into strategy metadata for fast access by APIs.
+            # Only perform this on the first snapshot to avoid overwriting user edits or restarts.
+            try:
+                trading_mode = getattr(
+                    runtime.request.exchange_config, "trading_mode", None
+                )
+                is_live = trading_mode == agent_models.TradingMode.LIVE
+                if is_live and is_first_snapshot:
+                    initial_free_cash = (
+                        initial_portfolio.free_cash
+                        or initial_portfolio.account_balance
+                        or runtime.request.trading_config.initial_free_cash
+                    )
+                    initial_total_cash = (
+                        initial_portfolio.total_value
+                        - initial_portfolio.total_unrealized_pnl
+                        if (
+                            initial_portfolio.total_value is not None
+                            and initial_portfolio.total_unrealized_pnl is not None
+                        )
+                        else runtime.request.trading_config.initial_free_cash
+                    )
+                    if initial_free_cash is not None:
+                        if strategy_persistence.update_initial_capital(
+                            self.strategy_id,
+                            float(initial_free_cash),
+                            float(initial_total_cash),
+                        ):
+                            try:
+                                # Also persist metadata for initial capital to avoid repeated first-snapshot queries
+                                strategy_persistence.set_initial_capital_metadata(
+                                    strategy_id=self.strategy_id,
+                                    initial_free_cash=float(initial_free_cash),
+                                    initial_total_cash=float(initial_total_cash),
+                                    source="live_snapshot_cash",
+                                    ts_ms=timestamp_ms,
+                                )
+                                logger.info(
+                                    "Recorded initial_free_cash={} initial_total_cash={} (source=live_snapshot_cash) in metadata for strategy={}",
+                                    initial_free_cash,
+                                    initial_total_cash,
+                                    self.strategy_id,
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "Failed to set initial capital metadata for {}",
+                                    self.strategy_id,
+                                )
+                        else:
+                            logger.warning(
+                                "Failed to update DB initial capital for strategy={} (LIVE mode)",
+                                self.strategy_id,
+                            )
+            except Exception:
+                logger.exception(
+                    "Error while updating DB initial capital from live balance for {}",
                     self.strategy_id,
                 )
         except Exception:

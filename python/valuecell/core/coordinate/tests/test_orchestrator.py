@@ -494,7 +494,11 @@ async def test_agent_connection_error(
     async for chunk in orchestrator.process_user_input(sample_user_input):
         out.append(chunk)
 
-    assert any("(Error)" in c.data.payload.content for c in out if c.data.payload)
+    assert any(
+        hasattr(c.data.payload, "content") and "(Error)" in c.data.payload.content
+        for c in out
+        if c.data.payload
+    )
 
 
 @pytest.mark.asyncio
@@ -507,9 +511,13 @@ async def test_super_agent_answer_short_circuits_planner(
         enriched_query=None,
         reason="Handled directly",
     )
+
+    async def _run(user_input):
+        yield outcome
+
     orchestrator.super_agent_service = SimpleNamespace(
         name="ValueCellAgent",
-        run=AsyncMock(return_value=outcome),
+        run=_run,
     )
 
     user_input = UserInput(
@@ -529,3 +537,32 @@ async def test_super_agent_answer_short_circuits_planner(
         if getattr(resp, "data", None) and getattr(resp.data, "payload", None)
     ]
     assert any("Concise reply" in content for content in payload_contents)
+
+
+@pytest.mark.asyncio
+async def test_handle_user_input_for_require_user_input_conversation(
+    orchestrator: AgentOrchestrator,
+    sample_user_input: UserInput,
+    mock_conversation_manager: Mock,
+):
+    # Mock a conversation in REQUIRE_USER_INPUT status
+    mock_conversation = Mock()
+    mock_conversation.status = ConversationStatus.REQUIRE_USER_INPUT
+    mock_conversation.id = "test-conv-id"
+    mock_conversation_manager.get_conversation.return_value = mock_conversation
+
+    # Mock _handle_conversation_continuation to yield a response
+    mock_response = Mock()
+
+    async def mock_continuation(user_input):
+        yield mock_response
+
+    orchestrator._handle_conversation_continuation = mock_continuation
+
+    # Execute
+    responses = []
+    async for resp in orchestrator.process_user_input(sample_user_input):
+        responses.append(resp)
+
+    # Verify the response was yielded
+    assert mock_response in responses

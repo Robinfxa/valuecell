@@ -22,13 +22,16 @@
     <a href="https://www.facebook.com/people/ValueCell/61581410516790/" target="_blank">
         <img src="https://custom-icon-badges.demolab.com/badge/Facebook-1877F2?logo=facebook-white&logoColor=fff"
             alt="follow on Facebook"></a>
+    <a href="https://www.youtube.com/watch?v=C3tfHyGY9YE" target="_blank">
+        <img src="https://img.shields.io/badge/Watch%20on-YouTube-red?logo=youtube"
+            alt="Watch on YouTube"></a>
 </div>
 
 <div align="center">
-  <a href="README.md" style="color: gray;">English</a>
-  <a href="README.zh.md" style="color: gray;">中文（简体）</a>
-  <a href="README.zh_Hant.md" style="color: gray;">中文（繁體）</a>
-  <a href="README.ja.md" style="color: auto;">日本語</a>
+  <a href="README.md" style="color: auto;">English</a>
+  <a href="README.zh.md" style="color: auto;">中文（简体）</a>
+  <a href="README.zh_Hant.md" style="color: auto;">中文（繁體）</a>
+  <a href="README.ja.md" style="color: gray;">日本語</a>
 </div>
 
 
@@ -37,13 +40,17 @@ ValueCellは、金融アプリケーション向けのコミュニティ主導�
 
 ポートフォリオ管理を支援するトップクラスの投資エージェントチームを提供します。これにより、銘柄選別、リサーチ、追跡、および取引の完了を支援します。
 
+機密情報はすべてローカルデバイスに保存され、コアデータのセキュリティが確保されます。
+
 Discord コミュニティへのご参加をお待ちしています。使用中に発生した問題についてのご意見をお寄せいただき、さらに多くの開発者にご参加いただけますようお願いします🔥🔥🔥
 
 >注意: ValueCellチームメンバーがコミュニティ参加者に主動的に連絡することはありません。このプロジェクトは技術交流のみを目的としています。投資にはリスクが伴います。⚠️
 
 # スクリーンショット
 
-p align="center">
+[![動画を観る](https://img.youtube.com/vi/C3tfHyGY9YE/maxresdefault.jpg)](https://www.youtube.com/watch?v=C3tfHyGY9YE)
+
+<p align="center">
   <img src="assets/product/homepage.png" style="width: 100%; height: auto;">
 </p>
 
@@ -84,89 +91,27 @@ p align="center">
 
 # クイックスタート
 
-## ユーザー向け
+## 新規ユーザー向け
 
 最新の ValueCell アプリケーション（MacOS または Windows 用）を GitHub の[リリースページ](https://github.com/ValueCell-ai/valuecell/releases)からダウンロードできます。また、公式ウェブサイト [https://valuecell.ai](https://valuecell.ai) からもダウンロードできます。
 
 インストール後、初回使用時に、お好みのモデルプロバイダーを設定してください。アプリケーション内の指示またはドキュメントを参照してください。
 
-## 開発者向け
-ValueCellは包括的なWebインターフェースを備えたPythonベースのアプリケーションです。このガイドに従って、アプリケーションを効率的にセットアップして実行してください。
-
-### 前提条件
-
-最適なパフォーマンスと効率的な開発のために、以下のツールのインストールを推奨します:
-
-**[uv](https://docs.astral.sh/uv/getting-started/installation/)** - Rustで構築された超高速Pythonパッケージおよびプロジェクトマネージャー  
-**[bun](https://github.com/oven-sh/bun#install)** - 高性能JavaScript/TypeScriptツールキット(ランタイム、バンドラー、テストランナー、パッケージマネージャーを含む)
-
-### インストール
-
-1. **リポジトリのクローン**
-
-   ```bash
-   git clone https://github.com/ValueCell-ai/valuecell.git
-   cd valuecell
-   ```
-
-2. **環境変数の設定**
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   APIキーと設定を`.env`ファイルに記入してください。この設定ファイルはすべてのエージェント間で共有されます。設定の詳細については、[設定ガイド](docs/CONFIGURATION_GUIDE.md) をご参照ください。
-
-## 設定
-
-詳細な設定情報については、[CONFIGURATION_GUIDE](./docs/CONFIGURATION_GUIDE.md)を参照してください。
-
-### モデルプロバイダー
-`.env`ファイルを編集して、お好みのモデルプロバイダーを設定してください:
-
-- **シンプルセットアップ**: モデルプロバイダーの API キーのみを設定してください
-
-- **高度な設定**: リサーチタイプのエージェントの場合、より多くの環境変数を設定する必要があります。詳細は `.env.example` ファイルを参照してください
-
-- **公式推奨**: OpenRouter + 埋め込みモデルを提供する任意のサプライヤーを設定してください。理由：プロバイダー間のモデルの高速切り替えが可能であり、RAG+Memory AI機能を提供します。
-
-## アプリケーションの実行
-
-完全なアプリケーション(フロントエンド、バックエンド、エージェント)を起動します:
-
-### Linux / Macos
-```bash
-bash start.sh
-```
-
-### Windows (PowerShell)
-```powershell
-.\start.ps1
-```
-
-## インターフェースへのアクセス
-
-- **Web UI**: ブラウザで[http://localhost:1420](http://localhost:1420)にアクセス
-- **ログ**: バックエンドサービスと個々のエージェントの詳細な実行時情報については、`logs/{timestamp}/*.log`でアプリケーションログを確認
-
-### 次のステップ
-
-アプリケーションが起動したら、WebインターフェースでValueCellの機能を操作して探索できます。
-
-## ライブ取引
+### ライブ取引
 
 - AIモデルの設定: Webインターフェースから AI モデルの API キーを追加します。
 - 取引所の設定: Binance/HyperLiquid/OKX/Coinbase... の API 認証情報を設定します。
 - ストラテジー作成: AIモデルと取引所を組み合わせてカスタム戦略を作成します。
 - モニタリング＆コントロール: 戦略の開始／停止を行い、パフォーマンスをリアルタイムで監視します。
+- 注意：現在は先物取引のみをサポートしています（現物は1X先物として実装）。先物口座に十分な残高があることを確認してください
 
-### サポートされている取引所
+#### サポートされている取引所
 
 | 取引所 | 備考 | ステータス |
 | --- | --- | --- |
-| **Binance** | 国際サイト [binance.com](binance.com) のみサポート（米国サイトは非対応）。USDT-M 先物（USDT証拠金契約）を使用します。先物口座に十分な USDT 残高があることを確認してください。取引ペア形式: `BTC/USDT` | ✅ テスト済み |
-| **Hyperliquid** | 証拠金通貨として USDC のみサポートします。メインウォレットアドレス + API ウォレット秘密鍵認証を使用します（[APIタブ](https://app.hyperliquid.xyz/API)から申請）。成行注文は自動的に IoC 指値注文に変換されます。取引ペア形式は手動で `SYMBOL/USDC` に調整する必要があります（例: `WIF/USDC`）。 | ✅ テスト済み |
-| **OKX** | 認証には API Key、Secret、Passphrase が必要です。USDT証拠金契約をサポートします。取引ペア形式: `BTC/USDT` | ✅ テスト済み |
+| **Binance** | 国際サイト [binance.com](binance.com) のみサポート（米国サイトは非対応）。USDT-M 先物（USDT証拠金契約）を使用します。先物口座に十分な USDT 残高があることを確認してください。取引ペア形式: `BTC/USDT`。注意：無期限先物口座の残高が0でないことを確認してください。API申請時はIPホワイトリストを追加してください（検索エンジンで`My IP`を検索して確認） | ✅ テスト済み |
+| **Hyperliquid** | 証拠金通貨として USDC のみサポートします。メインウォレットアドレス + API ウォレット秘密鍵認証を使用します（[APIタブ](https://app.hyperliquid.xyz/API)から申請）。成行注文は自動的に IoC 指値注文に変換されます。取引ペア形式は手動で `SYMBOL/USDC` に調整する必要があります（例: `WIF/USDC`）。メインウォレットアドレス+APIウォレット秘密鍵で設定。1取引あたり最低10U | ✅ テスト済み |
+| **OKX** | 認証には API Key、Secret、Passphrase（OKXアカウントパスワード）が必要です。USDT証拠金契約をサポートします。取引ペア形式: `BTC/USDT` | ✅ テスト済み |
 | Coinbase | USDT証拠金契約をサポートします。Coinbase International はまだサポートされていません。 | 🟡 部分的にテスト済み |
 | Gate.io | USDT証拠金契約をサポートします。API Key と Secret が必要です。 | 🟡 部分的にテスト済み |
 | MEXC | USDT証拠金契約をサポートします。API Key と Secret が必要です。 | 🟡 部分的にテスト済み |
@@ -183,6 +128,7 @@ bash start.sh
 - アカウントの安全を確保するために、API キーを定期的にリセットする必要があります。
 
 ---
+
 **注意**: アプリケーションを実行する前に、すべての前提条件がインストールされ、環境変数が適切に設定されていることを確認してください。
 長期間更新がない場合は、ローカルデータを削除して再起動できます：
 - LanceDB ディレクトリ（システムアプリディレクトリに保存。`.env` と同じ場所）：
@@ -199,11 +145,47 @@ bash start.sh
   - Windows: `%APPDATA%\\ValueCell\\valuecell.db`
 
 
-# 開発者
+## 開発者
 
 すべての開発者をDiscordディスカッショングループに招待し、コミュニティのRoadMapと将来のコミュニティコントリビューター権利計画について定期的に交流します
 
 開発プロセスと標準の詳細については、[CONTRIBUTING.md](.github/CONTRIBUTING.md)を参照してください
+
+ValueCellは包括的なWebインターフェースを備えたPythonベースのアプリケーションで、マルチプラットフォーム展開をサポートしています。以下の設定に従って、すぐに始めることができます。
+
+## リポジトリのクローン
+
+   ```bash
+   git clone https://github.com/ValueCell-ai/valuecell.git
+   cd valuecell
+   ```
+
+## アプリケーションの実行
+
+完全なアプリケーション(フロントエンド、バックエンド、エージェント)を起動します:
+
+### Linux / Macos
+```bash
+bash start.sh
+```
+
+### Windows (PowerShell)
+```powershell
+.\start.ps1
+```
+
+### インターフェースへのアクセス
+
+- **Web UI**: ブラウザで[http://localhost:1420](http://localhost:1420)にアクセス
+- **ログ**: ターミナルで直接アプリケーションログを確認し、バックエンドサービスと個々のエージェントの詳細な実行時情報を取得
+
+### 次のステップ
+
+アプリケーションが起動したら、WebインターフェースでValueCellの機能を操作して探索できます。
+
+### 設定
+
+詳細な設定情報については、[CONFIGURATION_GUIDE](./docs/CONFIGURATION_GUIDE.md)を参照してください
 
 # ロードマップ
 

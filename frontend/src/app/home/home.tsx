@@ -1,23 +1,32 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useAllPollTaskList } from "@/api/conversation";
-import ScrollContainer from "@/components/valuecell/scroll/scroll-container";
-import { HOME_STOCK_SHOW } from "@/constants/stock";
 import { agentSuggestions } from "@/mock/agent-data";
 import ChatInputArea from "../agent/components/chat-conversation/chat-input-area";
-import {
-  AgentSuggestionsList,
-  AgentTaskCards,
-  SparklineStockList,
-} from "./components";
-import { useSparklineStocks } from "./hooks/use-sparkline-stocks";
+import { AgentSuggestionsList, AgentTaskCards } from "./components";
 
 function Home() {
   const navigate = useNavigate();
   const [inputValue, setInputValue] = useState<string>("");
 
   const { data: allPollTaskList } = useAllPollTaskList();
-  const { sparklineStocks } = useSparklineStocks(HOME_STOCK_SHOW);
+
+  // Get region-aware default tickers from API
+  // const { data: defaultTickersData } = useGetDefaultTickers();
+
+  // Use API-returned tickers, fallback to hardcoded values if API fails
+  // const stockConfig = useMemo(() => {
+  //   if (defaultTickersData?.tickers) {
+  //     return defaultTickersData.tickers.map((t) => ({
+  //       ticker: t.ticker,
+  //       symbol: t.symbol,
+  //     }));
+  //   }
+  //   // Fallback to hardcoded values
+  //   return [...HOME_STOCK_SHOW];
+  // }, [defaultTickersData]);
+
+  // const { sparklineStocks } = useSparklineStocks(stockConfig);
 
   const handleAgentClick = (agentId: string) => {
     navigate(`/agent/${agentId}`);
@@ -25,13 +34,13 @@ function Home() {
 
   return (
     <div className="flex h-full min-w-[800px] flex-col gap-3">
-      <SparklineStockList stocks={sparklineStocks} />
+      {/* <SparklineStockList stocks={sparklineStocks} /> */}
 
       {allPollTaskList && allPollTaskList.length > 0 ? (
         <section className="flex flex-1 flex-col items-center justify-between gap-4 overflow-hidden">
-          <ScrollContainer className="w-full">
+          <div className="scroll-container w-full">
             <AgentTaskCards tasks={allPollTaskList} />
-          </ScrollContainer>
+          </div>
 
           <ChatInputArea
             className="w-full"

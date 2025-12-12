@@ -27,6 +27,14 @@ export type TimeInput = string | number | Date | Dayjs;
 // biome-ignore lint/complexity/noStaticOnlyClass: need to be static
 export class TimeUtils {
   /**
+   * Get current local time
+   * @returns Current local time as Dayjs instance
+   */
+  static now(): Dayjs {
+    return dayjs();
+  }
+
+  /**
    * Get current UTC time
    * @returns Current UTC time as Dayjs instance
    */
@@ -44,16 +52,6 @@ export class TimeUtils {
   }
 
   /**
-   * Format time with specified format
-   * @param time - Time input to format
-   * @param fmt - Format string (defaults to DATETIME)
-   * @returns Formatted time string
-   */
-  static format(time: TimeInput, fmt: string = TIME_FORMATS.DATETIME): string {
-    return dayjs(time).format(fmt);
-  }
-
-  /**
    * Format UTC time with specified format
    * @param time - Time input to format as UTC
    * @param fmt - Format string (defaults to DATETIME)
@@ -64,6 +62,15 @@ export class TimeUtils {
     fmt: string = TIME_FORMATS.DATETIME,
   ): string {
     return dayjs.utc(time).local().format(fmt);
+  }
+
+  /**
+   * Calculate the difference in days between now and the given time
+   * @param time - Time input
+   * @returns Difference in days
+   */
+  static formUTCDiff(time: TimeInput): number {
+    return dayjs.utc().diff(dayjs.utc(time), "day");
   }
 
   /**

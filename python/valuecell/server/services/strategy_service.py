@@ -1,12 +1,16 @@
 from datetime import datetime
 from typing import List, Optional
 
+from loguru import logger
+
 from valuecell.server.api.schemas.strategy import (
     PositionHoldingItem,
     StrategyActionCard,
     StrategyCycleDetail,
     StrategyHoldingData,
+    StrategyPerformanceData,
     StrategyPortfolioSummaryData,
+    StrategyType,
 )
 from valuecell.server.db.repositories import get_strategy_repository
 
@@ -108,14 +112,41 @@ class StrategyService:
         if not snapshot:
             return None
 
-        ts = snapshot.snapshot_ts or datetime.utcnow()
+        first_snapshot = repo.get_first_portfolio_snapshot(strategy_id)
+        if not first_snapshot:
+            return None
+
+        ts = snapshot.snapshot_ts or datetime.now(datetime.timezone.utc)
+        total_value = _to_optional_float(snapshot.total_value)
+        base_value = _to_optional_float(first_snapshot.total_value)
+
+        total_pnl = StrategyService._combine_realized_unrealized(snapshot)
+        total_pnl_pct = 0.0
+        if base_value is not None and base_value != 0:
+            # Option B: Use explicit baseline
+            # Note: This overrides the local variable total_pnl used in the return object
+            total_pnl = (total_value or 0.0) - base_value
+            total_pnl_pct = total_pnl / base_value
+        else:
+            # Option A: Infer baseline from current PnL
+            # Uses the existing total_pnl variable
+            current_pnl = total_pnl or 0.0
+            denom = total_value - current_pnl
+
+            if denom != 0:
+                total_pnl_pct = current_pnl / denom
+            else:
+                logger.warning(
+                    f"Cannot compute pnl_pct: denom is 0 for strategy_id={strategy_id}"
+                )
 
         return StrategyPortfolioSummaryData(
             strategy_id=strategy_id,
             ts=int(ts.timestamp() * 1000),
             cash=_to_optional_float(snapshot.cash),
-            total_value=_to_optional_float(snapshot.total_value),
-            total_pnl=StrategyService._combine_realized_unrealized(snapshot),
+            total_value=total_value,
+            total_pnl=total_pnl,
+            total_pnl_pct=total_pnl_pct * 100.0,
             gross_exposure=_to_optional_float(
                 getattr(snapshot, "gross_exposure", None)
             ),
@@ -123,12 +154,157 @@ class StrategyService:
         )
 
     @staticmethod
-    def _combine_realized_unrealized(snapshot) -> Optional[float]:
+    def _combine_realized_unrealized(snapshot) -> float:
         realized = _to_optional_float(getattr(snapshot, "total_realized_pnl", None))
         unrealized = _to_optional_float(getattr(snapshot, "total_unrealized_pnl", None))
-        if realized is None and unrealized is None:
-            return None
         return (realized or 0.0) + (unrealized or 0.0)
+
+    @staticmethod
+    def _normalize_strategy_type(meta: dict, cfg: dict) -> Optional[StrategyType]:
+        try:
+            from valuecell.server.api.schemas.strategy import StrategyType as ST
+        except Exception:
+            return None
+
+        val = meta.get("strategy_type")
+        if not val:
+            val = (cfg.get("trading_config", {}) or {}).get("strategy_type")
+        if val is None:
+            agent_name = str(meta.get("agent_name") or "").lower()
+            if "prompt" in agent_name:
+                return ST.PROMPT
+            if "grid" in agent_name:
+                return ST.GRID
+            return None
+
+        raw = str(val).strip().lower()
+        if raw.startswith("strategytype."):
+            raw = raw.split(".", 1)[1]
+        raw_compact = "".join(ch for ch in raw if ch.isalnum())
+
+        if raw in ("prompt based strategy", "grid strategy"):
+            return ST.PROMPT if raw.startswith("prompt") else ST.GRID
+        if raw_compact in ("promptbasedstrategy", "gridstrategy"):
+            return ST.PROMPT if raw_compact.startswith("prompt") else ST.GRID
+        if raw in ("prompt", "grid"):
+            return ST.PROMPT if raw == "prompt" else ST.GRID
+
+        agent_name = str(meta.get("agent_name") or "").lower()
+        if "prompt" in agent_name:
+            return ST.PROMPT
+        if "grid" in agent_name:
+            return ST.GRID
+        return None
+
+    @staticmethod
+    async def get_strategy_performance(
+        strategy_id: str,
+    ) -> Optional[StrategyPerformanceData]:
+        repo = get_strategy_repository()
+        strategy = repo.get_strategy_by_strategy_id(strategy_id)
+        if not strategy:
+            return None
+
+        snapshot = repo.get_latest_portfolio_snapshot(strategy_id)
+        # Reference timestamp no longer included in performance response
+
+        # Extract flattened config fields from original config/meta
+        cfg = strategy.config or {}
+        meta = strategy.strategy_metadata or {}
+
+        llm = cfg.get("llm_model_config") or {}
+        ex = cfg.get("exchange_config") or {}
+        tr = cfg.get("trading_config") or {}
+
+        llm_provider = (
+            llm.get("provider") or meta.get("provider") or meta.get("llm_provider")
+        )
+        llm_model_id = (
+            llm.get("model_id") or meta.get("model_id") or meta.get("llm_model_id")
+        )
+        exchange_id = ex.get("exchange_id") or meta.get("exchange_id")
+        strategy_type = StrategyService._normalize_strategy_type(meta, cfg)
+        # Determine initial capital source: in LIVE mode, prefer metadata (initial_capital_live),
+        # falling back to first snapshot cash only when metadata is missing; non-LIVE uses config.
+        trading_mode_raw = str(ex.get("trading_mode") or "").strip().lower()
+        if trading_mode_raw.startswith("tradingmode."):
+            trading_mode_raw = trading_mode_raw.split(".", 1)[1]
+        is_live_mode = trading_mode_raw == "live"
+        trading_mode: Optional[str] = (
+            trading_mode_raw if trading_mode_raw in ("live", "virtual") else None
+        )
+
+        if is_live_mode:
+            # Fast path: read from metadata set on first LIVE snapshot
+            initial_total_cash = _to_optional_float(meta.get("initial_total_cash_live"))
+            if initial_total_cash is None:
+                # Rare path: metadata missing (older strategies); query first snapshot once
+                try:
+                    first_snapshot = repo.get_first_portfolio_snapshot(strategy_id)
+                    initial_total_cash = (
+                        _to_optional_float(
+                            first_snapshot.total_value
+                            - first_snapshot.total_unrealized_pnl
+                        )
+                        if first_snapshot
+                        else None
+                    )
+                except Exception:
+                    initial_total_cash = None
+        else:
+            initial_total_cash = _to_optional_float(tr.get("initial_capital"))
+        max_leverage = _to_optional_float(tr.get("max_leverage"))
+        symbols = tr.get("symbols") if tr.get("symbols") is not None else None
+        # Resolve final prompt strictly via template_id from strategy_prompts (no fallback)
+        template_id = (
+            tr.get("template_id") if tr.get("template_id") is not None else None
+        )
+        final_prompt: Optional[str] = None
+        prompt_name: Optional[str] = None
+        if template_id:
+            try:
+                prompt_item = repo.get_prompt_by_id(template_id)
+                if prompt_item and getattr(prompt_item, "content", None):
+                    final_prompt = prompt_item.content
+                    prompt_name = getattr(prompt_item, "name", None)
+            except Exception:
+                # Strict mode: do not fallback; leave final_prompt as None
+                final_prompt = None
+                prompt_name = None
+
+        total_value = (
+            _to_optional_float(getattr(snapshot, "total_value", None))
+            if snapshot
+            else None
+        )
+
+        return_rate_pct: Optional[float] = None
+        try:
+            if (
+                initial_total_cash
+                and initial_total_cash > 0
+                and total_value is not None
+            ):
+                return_rate_pct = (
+                    (total_value - initial_total_cash) / initial_total_cash
+                ) * 100.0
+        except Exception:
+            return_rate_pct = None
+
+        return StrategyPerformanceData(
+            strategy_id=strategy_id,
+            initial_capital=initial_total_cash,
+            return_rate_pct=return_rate_pct,
+            llm_provider=llm_provider,
+            llm_model_id=llm_model_id,
+            exchange_id=exchange_id,
+            strategy_type=strategy_type,
+            trading_mode=trading_mode,
+            max_leverage=max_leverage,
+            symbols=symbols,
+            prompt_name=prompt_name,
+            prompt=final_prompt,
+        )
 
     @staticmethod
     async def get_strategy_detail(

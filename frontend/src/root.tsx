@@ -1,9 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Links, Meta, Outlet, Scripts, ScrollRestoration } from "react-router";
-import AppSidebar from "@/components/valuecell/app-sidebar";
+import AppSidebar from "@/components/valuecell/app/app-sidebar";
 import { Toaster } from "./components/ui/sonner";
 
-import "overlayscrollbars/overlayscrollbars.css";
 import "./global.css";
 import { SidebarProvider } from "./components/ui/sidebar";
 
@@ -41,26 +40,29 @@ const queryClient = new QueryClient({
   },
 });
 
-import { AutoUpdateCheck } from "@/components/valuecell/auto-update-check";
-import { BackendHealthCheck } from "@/components/valuecell/backend-health-check";
+import { AutoUpdateCheck } from "@/components/valuecell/app/auto-update-check";
+import { BackendHealthCheck } from "@/components/valuecell/app/backend-health-check";
+import { TrackerProvider } from "./provider/tracker-provider";
 
 export default function Root() {
   return (
     <QueryClientProvider client={queryClient}>
       <BackendHealthCheck>
-        <SidebarProvider>
-          <div className="fixed flex size-full overflow-hidden">
-            <AppSidebar />
+        <TrackerProvider>
+          <SidebarProvider>
+            <div className="fixed flex size-full overflow-hidden">
+              <AppSidebar />
 
-            <main
-              className="relative flex flex-1 overflow-hidden"
-              id="main-content"
-            >
-              <Outlet />
-            </main>
-            <Toaster />
-          </div>
-        </SidebarProvider>
+              <main
+                className="relative flex flex-1 overflow-hidden"
+                id="main-content"
+              >
+                <Outlet />
+              </main>
+              <Toaster />
+            </div>
+          </SidebarProvider>
+        </TrackerProvider>
         <AutoUpdateCheck />
       </BackendHealthCheck>
     </QueryClientProvider>

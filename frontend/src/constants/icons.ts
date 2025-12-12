@@ -3,6 +3,7 @@ import {
   BinancePng,
   BlockchainPng,
   CoinbasePng,
+  DashScopePng,
   DeepSeekPng,
   GatePng,
   GooglePng,
@@ -13,6 +14,7 @@ import {
   OpenAiPng,
   OpenRouterPng,
   SiliconFlowPng,
+  ValueCellAgentPng,
 } from "@/assets/png";
 
 export const MODEL_PROVIDER_ICONS = {
@@ -23,6 +25,7 @@ export const MODEL_PROVIDER_ICONS = {
   deepseek: DeepSeekPng,
   google: GooglePng,
   azure: AzurePng,
+  dashscope: DashScopePng,
 };
 
 export const EXCHANGE_ICONS = {
@@ -34,4 +37,5 @@ export const EXCHANGE_ICONS = {
   hyperliquid: HyperliquidPng,
   mexc: MexcPng,
   okx: OkxPng,
+  virtual: ValueCellAgentPng,
 };

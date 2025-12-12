@@ -1280,6 +1280,16 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             meta=inst.meta,
         )
 
+    async def test_connection(self) -> bool:
+        """Test connectivity and authentication with the exchange."""
+        try:
+            # Attempt to fetch balance which requires authentication
+            await self.fetch_balance()
+            return True
+        except Exception as e:
+            logger.warning(f"⚠️ Connection test failed for {self.exchange_id}: {e}")
+            return False
+
     async def close(self) -> None:
         """Close the exchange connection and cleanup resources."""
         if self._exchange is not None:
@@ -1319,8 +1329,10 @@ class CCXTExecutionGateway(BaseExecutionGateway):
             positions = await exchange.fetch_positions(normalized_symbols)
             return positions
         except Exception as e:
-            print(f"Warning: Could not fetch positions: {e}")
-            return []
+            # Do NOT return an empty list on network/exchange errors; propagate
+            # so upstream retry/backoff logic can kick in and avoid wiping holdings.
+            logger.warning(f"⚠️ Could not fetch positions: {e}")
+            raise
 
     async def cancel_order(self, order_id: str, symbol: str) -> Dict:
         """Cancel an open order.
@@ -1362,6 +1374,8 @@ async def create_ccxt_gateway(
     api_key: str,
     secret_key: str,
     passphrase: Optional[str] = None,
+    wallet_address: Optional[str] = None,
+    private_key: Optional[str] = None,
     testnet: bool = False,
     market_type: str = "swap",
     margin_mode: str = "cross",
@@ -1371,10 +1385,12 @@ async def create_ccxt_gateway(
     """Factory function to create and initialize a CCXT execution gateway.
 
     Args:
-        exchange_id: Exchange identifier (e.g., 'binance', 'okx', 'bybit')
-        api_key: API key for authentication
-        secret_key: Secret key for authentication
+        exchange_id: Exchange identifier (e.g., 'binance', 'okx', 'bybit', 'hyperliquid')
+        api_key: API key for authentication (not required for Hyperliquid)
+        secret_key: Secret key for authentication (not required for Hyperliquid)
         passphrase: Optional passphrase (required for OKX)
+        wallet_address: Wallet address (required for Hyperliquid)
+        private_key: Private key (required for Hyperliquid)
         testnet: Whether to use testnet/sandbox mode
         market_type: Market type ('spot', 'future', 'swap')
         margin_mode: Margin mode ('isolated' or 'cross')
@@ -1400,6 +1416,8 @@ async def create_ccxt_gateway(
         api_key=api_key,
         secret_key=secret_key,
         passphrase=passphrase,
+        wallet_address=wallet_address,
+        private_key=private_key,
         testnet=testnet,
         default_type=market_type,
         margin_mode=margin_mode,

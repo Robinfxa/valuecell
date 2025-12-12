@@ -10,6 +10,9 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 /// Backend process manager
 pub struct BackendManager {
     processes: Mutex<Vec<CommandChild>>,
@@ -19,6 +22,8 @@ pub struct BackendManager {
 }
 
 const MAIN_MODULE: &str = "valuecell.server.main";
+const EXIT_COMMAND: &[u8] = b"__EXIT__\n";
+const GRACEFUL_TIMEOUT_SECS: u64 = 3;
 
 impl BackendManager {
     fn wait_until_terminated(mut rx: Receiver<CommandEvent>) {
@@ -30,41 +35,62 @@ impl BackendManager {
     }
 
     fn kill_descendants_best_effort(&self, parent_pid: u32) {
-        // Try to kill all descendants of the given PID (macOS/Linux)
-        // This is best-effort and ignores errors on platforms without `pkill`.
-        // First, send SIGINT (Ctrl+C equivalent) and wait up to 5 seconds.
-        // If processes are still running, escalate to SIGKILL.
         let pid_str = parent_pid.to_string();
 
-        // Send SIGINT (Ctrl+C equivalent)
-        if let Ok((_rx, _child)) = self
-            .app
-            .shell()
-            .command("pkill")
-            .args(["-INT", "-P", &pid_str])
-            .spawn()
+        #[cfg(windows)]
         {
-            log::info!(
-                "Issued SIGINT (Ctrl+C) pkill for descendants of {}",
-                parent_pid
-            );
+            // On Windows, use taskkill to forcefully terminate the process tree
+            // /F = Force
+            // /T = Tree (child processes)
+            // /PID = Process ID
+            log::info!("Issued taskkill for descendants of {}", parent_pid);
+            // We use std::process::Command directly to avoid needing to configure permissions for taskkill
+            if let Err(e) = std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid_str])
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .output()
+            {
+                log::error!("Failed to execute taskkill: {}", e);
+            }
         }
 
-        // Wait up to 3 seconds for graceful termination
-        std::thread::sleep(Duration::from_secs(3));
-
-        // Escalate to SIGKILL if processes are still running
-        if let Ok((_rx, _child)) = self
-            .app
-            .shell()
-            .command("pkill")
-            .args(["-KILL", "-P", &pid_str])
-            .spawn()
+        #[cfg(not(windows))]
         {
-            log::info!(
-                "Issued SIGKILL (forceful) pkill for descendants of {}",
-                parent_pid
-            );
+            // Try to kill all descendants of the given PID (macOS/Linux)
+            // This is best-effort and ignores errors on platforms without `pkill`.
+            // First, send SIGINT (Ctrl+C equivalent) and wait up to 5 seconds.
+            // If processes are still running, escalate to SIGKILL.
+
+            // Send SIGINT (Ctrl+C equivalent)
+            if let Ok((_rx, _child)) = self
+                .app
+                .shell()
+                .command("pkill")
+                .args(["-INT", "-P", &pid_str])
+                .spawn()
+            {
+                log::info!(
+                    "Issued SIGINT (Ctrl+C) pkill for descendants of {}",
+                    parent_pid
+                );
+            }
+
+            // Wait up to 3 seconds for graceful termination
+            std::thread::sleep(Duration::from_secs(3));
+
+            // Escalate to SIGKILL if processes are still running
+            if let Ok((_rx, _child)) = self
+                .app
+                .shell()
+                .command("pkill")
+                .args(["-KILL", "-P", &pid_str])
+                .spawn()
+            {
+                log::info!(
+                    "Issued SIGKILL (forceful) pkill for descendants of {}",
+                    parent_pid
+                );
+            }
         }
     }
 
@@ -82,6 +108,32 @@ impl BackendManager {
         sidecar_command
             .spawn()
             .context("Failed to spawn backend process")
+    }
+
+    fn request_graceful_then_kill(&self, mut process: CommandChild) {
+        let pid = process.pid();
+        log::info!("Requesting graceful shutdown for process {}", pid);
+
+        if let Err(err) = process.write(EXIT_COMMAND) {
+            log::warn!(
+                "Failed to send shutdown command to process {}: {}",
+                pid,
+                err
+            );
+        } else {
+            log::info!("Exit command written to process {}", pid);
+        }
+
+        std::thread::sleep(Duration::from_secs(GRACEFUL_TIMEOUT_SECS));
+
+        log::info!("Sending forceful shutdown to process {}", pid);
+        self.kill_descendants_best_effort(pid);
+
+        if let Err(err) = process.kill() {
+            log::error!("Failed to kill process {}: {}", pid, err);
+        } else {
+            log::info!("Force kill signal sent to process {}", pid);
+        }
     }
 
     pub fn new(app: AppHandle) -> Result<Self> {
@@ -114,13 +166,61 @@ impl BackendManager {
         })
     }
 
+    fn decide_index_url() -> bool {
+        const IPAPI_URL: &str = "https://ipapi.co/json/";
+        const TIMEOUT_SECS: u64 = 3;
+
+        let client = match reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(TIMEOUT_SECS))
+            .build()
+        {
+            Ok(c) => c,
+            Err(e) => {
+                log::warn!("Failed to create HTTP client: {}, using default index", e);
+                return false;
+            }
+        };
+
+        match client.get(IPAPI_URL).send() {
+            Ok(response) => {
+                if let Ok(json) = response.json::<serde_json::Value>() {
+                    let country_code = json
+                        .get("country_code")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_uppercase();
+                    if country_code == "CN" {
+                        return true;
+                    }
+                }
+                false
+            }
+            Err(e) => {
+                log::warn!("Failed to detect region: {}, using default index", e);
+                false
+            }
+        }
+    }
+
     fn install_dependencies(&self) -> Result<()> {
+        let should_specify_index_url = Self::decide_index_url();
+
+        let mut args = vec!["sync", "--frozen"];
+        let index_url: String;
+        if should_specify_index_url {
+            index_url = "https://mirrors.aliyun.com/pypi/simple/".to_string();
+            args.push("--index-url");
+            args.push(&index_url);
+        }
+
+        log::info!("Running: uv {}", args.join(" "));
+
         let sidecar_command = self
             .app
             .shell()
             .sidecar("uv")
             .context("Failed to create uv sidecar command")?
-            .args(["sync", "--frozen"])
+            .args(&args)
             .current_dir(&self.backend_path);
 
         let (rx, _child) = sidecar_command.spawn().context("Failed to spawn uv sync")?;
@@ -151,18 +251,7 @@ impl BackendManager {
     pub fn stop_all(&self) {
         let mut processes = self.processes.lock().unwrap();
         for process in processes.drain(..) {
-            let pid = process.pid();
-            log::info!("Terminating process {}", pid);
-
-            // Attempt to terminate any descendants spawned under this process BEFORE killing the parent
-            self.kill_descendants_best_effort(pid);
-
-            // Use CommandChild's kill method
-            if let Err(e) = process.kill() {
-                log::error!("Failed to kill process {}: {}", pid, e);
-            } else {
-                log::info!("Process {} terminated", pid);
-            }
+            self.request_graceful_then_kill(process);
         }
     }
 
@@ -193,7 +282,14 @@ impl BackendManager {
                     log::error!("Backend process error: {}", err);
                     break;
                 }
-                CommandEvent::Terminated(_) => break,
+                CommandEvent::Terminated(payload) => {
+                    log::info!(
+                        "Backend process terminated (code: {:?}, signal: {:?})",
+                        payload.code,
+                        payload.signal
+                    );
+                    break;
+                }
                 _ => {}
             }
         }

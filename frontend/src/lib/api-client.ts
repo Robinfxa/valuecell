@@ -1,4 +1,8 @@
 import { toast } from "sonner";
+import { getUserInfo } from "@/api/system";
+import { VALUECELL_BACKEND_URL } from "@/constants/api";
+import { useSystemStore } from "@/store/system-store";
+import type { SystemInfo } from "@/types/system";
 
 // API error type
 export class ApiError extends Error {
@@ -24,6 +28,8 @@ export interface RequestConfig {
   requiresAuth?: boolean;
   headers?: Record<string, string>;
   signal?: AbortSignal;
+  keepalive?: boolean;
+  wrapError?: boolean;
 }
 
 export const getServerUrl = (endpoint: string) => {
@@ -35,30 +41,53 @@ export const getServerUrl = (endpoint: string) => {
 class ApiClient {
   // default config
   private config: RequestConfig = {
-    requiresAuth: true,
+    requiresAuth: false,
     headers: {
       "Content-Type": "application/json",
     },
   };
 
-  private async handleResponse<T>(response: Response): Promise<T> {
-    if (!response.ok) {
+  private async handleResponse<T>(
+    response: Response,
+    wrapError: boolean,
+  ): Promise<T> {
+    if (wrapError && !response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      const message =
+      const message = JSON.stringify(
         errorData.message ||
-        errorData.detail ||
-        response.statusText ||
-        `HTTP ${response.status}`;
+          errorData.detail ||
+          response.statusText ||
+          `HTTP ${response.status}`,
+      );
 
-      //TODO: Handle 401 unauthorized
-      // if (response.status === 401) {
-      //   localStorage.removeItem("authToken");
-      //   if (typeof window !== "undefined") {
-      //     window.location.href = "/login";
-      //   }
-      // }
+      if (response.status === 401) {
+        try {
+          const {
+            data: { access_token, refresh_token },
+          } = await apiClient.post<
+            ApiResponse<Pick<SystemInfo, "access_token" | "refresh_token">>
+          >(`${VALUECELL_BACKEND_URL}/refresh`, {
+            refreshToken: useSystemStore.getState().refresh_token,
+          });
 
-      toast.error(message);
+          if (access_token && refresh_token) {
+            const userInfo = await getUserInfo(access_token);
+
+            if (userInfo) {
+              useSystemStore.getState().setSystemInfo({
+                access_token,
+                refresh_token,
+                ...userInfo,
+              });
+            }
+          }
+        } catch (error) {
+          toast.error(JSON.stringify(error));
+          useSystemStore.getState().clearSystemInfo();
+        }
+      } else {
+        toast.error(message);
+      }
 
       throw new ApiError(message, response.status, errorData);
     }
@@ -82,7 +111,7 @@ class ApiClient {
 
     // add authentication header
     if (mergedConfig.requiresAuth) {
-      const token = localStorage.getItem("authToken");
+      const token = useSystemStore.getState().access_token;
       if (token) {
         mergedConfig.headers!.Authorization = `Bearer ${token}`;
       }
@@ -93,6 +122,7 @@ class ApiClient {
       method,
       headers: mergedConfig.headers,
       signal: mergedConfig.signal,
+      keepalive: mergedConfig.keepalive,
     };
 
     // add request body
@@ -106,7 +136,7 @@ class ApiClient {
     }
 
     const response = await fetch(url, requestConfig);
-    return this.handleResponse<T>(response);
+    return this.handleResponse<T>(response, config.wrapError ?? true);
   }
 
   async get<T>(endpoint: string, config?: RequestConfig): Promise<T> {

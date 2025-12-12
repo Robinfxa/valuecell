@@ -210,8 +210,17 @@ class TradingConfig(BaseModel):
     )
     initial_capital: Optional[float] = Field(
         default=DEFAULT_INITIAL_CAPITAL,
-        description="Initial capital for trading in USD",
+        description="Initial total cash for trading in USD",
         gt=0,
+    )
+    initial_free_cash: Optional[float] = Field(
+        default=DEFAULT_INITIAL_CAPITAL,
+        description="Initial free cash for trading in USD",
+        gt=0,
+    )
+    initial_positions: Dict[str, "PositionSnapshot"] = Field(
+        default={},
+        description="Initial positions in portfolio",
     )
     max_leverage: float = Field(
         default=DEFAULT_MAX_LEVERAGE,
@@ -325,6 +334,16 @@ class InstrumentRef(BaseModel):
     # quote_ccy: Optional[str] = Field(
     #     default=None, description="Quote currency (e.g., USDT)"
     # )
+
+
+@dataclass(frozen=True)
+class CandleConfig:
+    """Configuration for a specific candle size and lookback number."""
+
+    interval: str = Field(
+        ..., description="the interval of each candle, e.g., '1s', '1m'"
+    )
+    lookback: int = Field(..., gt=0, description="the number of candles to look back")
 
 
 class Candle(BaseModel):

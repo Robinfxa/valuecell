@@ -1,191 +1,65 @@
-import { Check } from "lucide-react";
-import type { FC } from "react";
-import { memo, useState } from "react";
-import { z } from "zod";
-import { useCreateStrategy, useGetStrategyPrompts } from "@/api/strategy";
+import { useStore } from "@tanstack/react-form";
+import { AlertCircleIcon } from "lucide-react";
+import type { FC, RefObject } from "react";
+import { memo, useImperativeHandle, useState } from "react";
+import { useGetModelProviderDetail } from "@/api/setting";
+import {
+  useCreateStrategy,
+  useGetStrategyList,
+  useGetStrategyPrompts,
+} from "@/api/strategy";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import CloseButton from "@/components/valuecell/button/close-button";
-import ScrollContainer from "@/components/valuecell/scroll/scroll-container";
+import { AIModelForm } from "@/components/valuecell/form/ai-model-form";
+import {
+  EXCHANGE_OPTIONS,
+  ExchangeForm,
+} from "@/components/valuecell/form/exchange-form";
+import { TradingStrategyForm } from "@/components/valuecell/form/trading-strategy-form";
+import { StepIndicator } from "@/components/valuecell/step-indicator";
 import { TRADING_SYMBOLS } from "@/constants/agent";
+import {
+  aiModelSchema,
+  exchangeSchema,
+  tradingStrategySchema,
+} from "@/constants/schema";
 import { useAppForm } from "@/hooks/use-form";
-import type { Strategy } from "@/types/strategy";
-import { AIModelForm } from "../forms/ai-model-form";
-import { ExchangeForm } from "../forms/exchange-form";
-import { TradingStrategyForm } from "../forms/trading-strategy-form";
+import { tracker } from "@/lib/tracker";
+import type { CreateStrategy, Strategy } from "@/types/strategy";
 
+export interface CreateStrategyModelRef {
+  open: (data?: CreateStrategy) => void;
+}
 interface CreateStrategyModalProps {
   children?: React.ReactNode;
+  ref?: RefObject<CreateStrategyModelRef | null>;
 }
 
-type StepNumber = 1 | 2 | 3;
-
-// Step 1 Schema: AI Models
-const step1Schema = z.object({
-  provider: z.string().min(1, "Model platform is required"),
-  model_id: z.string().min(1, "Model selection is required"),
-  api_key: z.string().min(1, "API key is required"),
-});
-
-// Step 2 Schema: Exchanges (conditional validation with superRefine)
-// Base schema with all fields optional (empty strings allowed)
-const baseStep2Fields = {
-  exchange_id: z.string(),
-  api_key: z.string(),
-  secret_key: z.string(),
-  passphrase: z.string(),
-  wallet_address: z.string(),
-  private_key: z.string(),
-};
-
-const step2Schema = z.union([
-  // Virtual Trading
-  z.object({
-    ...baseStep2Fields,
-    trading_mode: z.literal("virtual"),
-  }),
-
-  // Live Trading - Hyperliquid
-  z.object({
-    ...baseStep2Fields,
-    trading_mode: z.literal("live"),
-    exchange_id: z.literal("hyperliquid"),
-    wallet_address: z
-      .string()
-      .min(1, "Wallet Address is required for Hyperliquid"),
-    private_key: z.string().min(1, "Private Key is required for Hyperliquid"),
-  }),
-
-  // Live Trading - OKX & Coinbase (Require Passphrase)
-  z.object({
-    ...baseStep2Fields,
-    trading_mode: z.literal("live"),
-    exchange_id: z.enum(["okx", "coinbaseexchange"]),
-    api_key: z.string().min(1, "API key is required"),
-    secret_key: z.string().min(1, "Secret key is required"),
-    passphrase: z.string().min(1, "Passphrase is required"),
-  }),
-
-  // Live Trading - Standard Exchanges
-  z.object({
-    ...baseStep2Fields,
-    trading_mode: z.literal("live"),
-    exchange_id: z.enum(["binance", "blockchaincom", "gate", "mexc"]),
-    api_key: z.string().min(1, "API key is required"),
-    secret_key: z.string().min(1, "Secret key is required"),
-  }),
-]);
-
-// Step 3 Schema: Trading Strategy
-const step3Schema = z.object({
-  strategy_type: z.enum(["PromptBasedStrategy", "GridStrategy"]),
-  strategy_name: z.string().min(1, "Strategy name is required"),
-  initial_capital: z.number().min(1, "Initial capital must be at least 1"),
-  max_leverage: z
-    .number()
-    .min(1, "Leverage must be at least 1")
-    .max(5, "Leverage must be at most 5"),
-  symbols: z.array(z.string()).min(1, "At least one symbol is required"),
-  template_id: z.string().min(1, "Template selection is required"),
-});
-
 const STEPS = [
-  { number: 1 as const, title: "AI Models" },
-  { number: 2 as const, title: "Exchanges" },
-  { number: 3 as const, title: "Trading strategy" },
+  { step: 1, title: "AI Models" },
+  { step: 2, title: "Exchanges" },
+  { step: 3, title: "Trading strategy" },
 ];
 
-const StepIndicator: FC<{ currentStep: StepNumber }> = ({ currentStep }) => {
-  const getStepState = (stepNumber: StepNumber) => ({
-    isCompleted: stepNumber < currentStep,
-    isCurrent: stepNumber === currentStep,
-    isActive: stepNumber <= currentStep,
-    isLast: stepNumber === STEPS.length,
-  });
-
-  const renderStepNumber = (
-    step: StepNumber,
-    isCurrent: boolean,
-    isCompleted: boolean,
-  ) => {
-    if (isCompleted) {
-      return (
-        <div className="flex size-6 items-center justify-center rounded-full bg-gray-950">
-          <Check className="size-3 text-white" />
-        </div>
-      );
-    }
-
-    return (
-      <div className="relative flex size-6 items-center justify-center">
-        <div
-          className={`absolute inset-0 rounded-full border-2 ${
-            isCurrent ? "border-gray-950 bg-gray-950" : "border-black/40"
-          }`}
-        />
-        <span
-          className={`relative font-semibold text-base ${
-            isCurrent ? "text-white" : "text-black/40"
-          }`}
-        >
-          {step}
-        </span>
-      </div>
-    );
-  };
-
-  return (
-    <div className="flex items-start">
-      {STEPS.map((step) => {
-        const { isCompleted, isCurrent, isActive, isLast } = getStepState(
-          step.number,
-        );
-
-        return (
-          <div key={step.number} className="flex min-w-0 flex-1 items-start">
-            <div className="flex w-full items-start gap-2">
-              {/* Step number/icon */}
-              <div className="shrink-0">
-                {renderStepNumber(step.number, isCurrent, isCompleted)}
-              </div>
-
-              {/* Step title and connector line */}
-              <div className="flex min-w-0 flex-1 items-center gap-3 pr-3">
-                <span
-                  className={`shrink-0 whitespace-nowrap text-base ${
-                    isActive ? "text-black/90" : "text-black/40"
-                  }`}
-                >
-                  {step.title}
-                </span>
-
-                {!isLast && (
-                  <div
-                    className={`h-0.5 min-w-0 flex-1 ${
-                      isCompleted ? "bg-gray-950" : "bg-gray-200"
-                    }`}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};
-
-const CreateStrategyModal: FC<CreateStrategyModalProps> = ({ children }) => {
+const CreateStrategyModal: FC<CreateStrategyModalProps> = ({
+  ref,
+  children,
+}) => {
   const [open, setOpen] = useState(false);
-  const [currentStep, setCurrentStep] = useState<StepNumber>(1);
+  const [currentStep, setCurrentStep] = useState(1);
+  const [error, setError] = useState<string | null>(null);
 
   const { data: prompts = [] } = useGetStrategyPrompts();
+  const { data: strategies = [] } = useGetStrategyList();
   const { mutateAsync: createStrategy, isPending: isCreatingStrategy } =
     useCreateStrategy();
 
@@ -197,12 +71,15 @@ const CreateStrategyModal: FC<CreateStrategyModalProps> = ({ children }) => {
       api_key: "",
     },
     validators: {
-      onSubmit: step1Schema,
+      onSubmit: aiModelSchema,
     },
     onSubmit: () => {
       setCurrentStep(2);
     },
   });
+
+  const provider = useStore(form1.store, (state) => state.values.provider);
+  const { data: modelProviderDetail } = useGetModelProviderDetail(provider);
 
   // Step 2 Form: Exchanges
   const form2 = useAppForm({
@@ -216,9 +93,31 @@ const CreateStrategyModal: FC<CreateStrategyModalProps> = ({ children }) => {
       private_key: "",
     },
     validators: {
-      onSubmit: step2Schema,
+      onSubmit: exchangeSchema,
     },
     onSubmit: () => {
+      const modelId = form1.state.values.model_id;
+      const modelName =
+        modelProviderDetail?.models.find((m) => m.model_id === modelId)
+          ?.model_name || modelId;
+
+      const { trading_mode, exchange_id } = form2.state.values;
+      const exchangeName =
+        trading_mode === "virtual"
+          ? "Virtual"
+          : EXCHANGE_OPTIONS.find((ex) => ex.value === exchange_id)?.label ||
+            exchange_id;
+
+      const baseName = `${modelName}-${exchangeName}`;
+      let newName = baseName;
+      let counter = 1;
+
+      while (strategies.some((s) => s.strategy_name === newName)) {
+        newName = `${baseName}-${counter}`;
+        counter++;
+      }
+
+      form3.setFieldValue("strategy_name", newName);
       setCurrentStep(3);
     },
   });
@@ -230,11 +129,12 @@ const CreateStrategyModal: FC<CreateStrategyModalProps> = ({ children }) => {
       strategy_name: "",
       initial_capital: 1000,
       max_leverage: 2,
+      decide_interval: 60,
       symbols: TRADING_SYMBOLS,
       template_id: prompts.length > 0 ? prompts[0].id : "",
     },
     validators: {
-      onSubmit: step3Schema,
+      onSubmit: tradingStrategySchema,
     },
     onSubmit: async ({ value }) => {
       const payload = {
@@ -243,7 +143,13 @@ const CreateStrategyModal: FC<CreateStrategyModalProps> = ({ children }) => {
         trading_config: value,
       };
 
-      await createStrategy(payload);
+      const { code, msg } = await createStrategy(payload);
+      if (code !== 0) {
+        setError(msg);
+        return;
+      }
+
+      tracker.send("use", { agent_name: "StrategyAgent" });
       resetAll();
     },
   });
@@ -253,14 +159,26 @@ const CreateStrategyModal: FC<CreateStrategyModalProps> = ({ children }) => {
     form1.reset();
     form2.reset();
     form3.reset();
+    setError(null);
     setOpen(false);
   };
 
   const handleBack = () => {
     if (currentStep > 1) {
-      setCurrentStep((prev) => (prev - 1) as StepNumber);
+      setCurrentStep((prev) => prev - 1);
     }
   };
+
+  useImperativeHandle(ref, () => ({
+    open: (data) => {
+      if (data) {
+        form1.reset(data.llm_model_config);
+        form2.reset(data.exchange_config);
+        form3.reset(data.trading_config);
+      }
+      setOpen(true);
+    },
+  }));
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -277,11 +195,11 @@ const CreateStrategyModal: FC<CreateStrategyModalProps> = ({ children }) => {
             <CloseButton onClick={resetAll} />
           </div>
 
-          <StepIndicator currentStep={currentStep} />
+          <StepIndicator steps={STEPS} currentStep={currentStep} />
         </DialogTitle>
 
         {/* Form content with scroll */}
-        <ScrollContainer className="px-1 py-2">
+        <div className="scroll-container px-1 py-2">
           {/* Step 1: AI Models */}
           {currentStep === 1 && <AIModelForm form={form1} />}
 
@@ -296,39 +214,48 @@ const CreateStrategyModal: FC<CreateStrategyModalProps> = ({ children }) => {
               tradingMode={form2.state.values.trading_mode}
             />
           )}
-        </ScrollContainer>
-
-        {/* Footer buttons */}
-        <div className="mt-auto flex gap-6">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={currentStep === 1 ? resetAll : handleBack}
-            className="flex-1 border-gray-100 py-4 font-semibold text-base"
-          >
-            {currentStep === 1 ? "Cancel" : "Back"}
-          </Button>
-          <Button
-            type="button"
-            disabled={isCreatingStrategy}
-            onClick={async () => {
-              switch (currentStep) {
-                case 1:
-                  await form1.handleSubmit();
-                  break;
-                case 2:
-                  await form2.handleSubmit();
-                  break;
-                case 3:
-                  await form3.handleSubmit();
-              }
-            }}
-            className="flex-1 py-4 font-semibold text-base text-white hover:bg-gray-800"
-          >
-            {isCreatingStrategy && <Spinner />}{" "}
-            {currentStep === 3 ? "Confirm" : "Next"}
-          </Button>
         </div>
+
+        <DialogFooter className="mt-auto flex flex-col! gap-2">
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircleIcon />
+              <AlertTitle>Error Creating Strategy</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="grid w-full grid-cols-2 gap-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={currentStep === 1 ? resetAll : handleBack}
+              className="border-gray-100 py-4 font-semibold text-base"
+            >
+              {currentStep === 1 ? "Cancel" : "Back"}
+            </Button>
+            <Button
+              type="button"
+              disabled={isCreatingStrategy}
+              onClick={async () => {
+                switch (currentStep) {
+                  case 1:
+                    await form1.handleSubmit();
+                    break;
+                  case 2:
+                    await form2.handleSubmit();
+                    break;
+                  case 3:
+                    await form3.handleSubmit();
+                }
+              }}
+              className="relative py-4 font-semibold text-base text-white hover:bg-gray-800"
+            >
+              {isCreatingStrategy && <Spinner className="absolute left-4" />}
+              {currentStep === 3 ? "Confirm" : "Next"}
+            </Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

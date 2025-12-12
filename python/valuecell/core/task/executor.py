@@ -33,7 +33,7 @@ from valuecell.core.types import (
 )
 from valuecell.utils.i18n_utils import get_current_language, get_current_timezone
 from valuecell.utils.user_profile_utils import get_user_profile_metadata
-from valuecell.utils.uuid import generate_item_id, generate_task_id
+from valuecell.utils.uuid import generate_item_id, generate_task_id, generate_uuid
 
 
 class ScheduledTaskResultAccumulator:
@@ -125,7 +125,6 @@ class TaskExecutor:
                 agent_name="Planner",
             )
             yield await self._event_service.emit(response)
-            return
 
         for task in plan.tasks:
             subagent_component_id = generate_item_id()
@@ -328,10 +327,66 @@ class TaskExecutor:
         metadata: dict,
     ) -> AsyncGenerator[BaseResponse, None]:
         agent_name = task.agent_name
+
+        # Emit a tool-call STARTED event for invoking the agent (get_client)
+        tool_call_id = generate_uuid("toolcall")
+        tool_task_id = generate_task_id()
+        tool_name = "connect_agent"
+        yield await self._event_service.emit(
+            self._event_service.factory.tool_call(
+                task.conversation_id,
+                thread_id,
+                task_id=tool_task_id,
+                event=StreamResponseEvent.TOOL_CALL_STARTED,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+            )
+        )
+
+        logger.info(
+            "_execute_single_task_run: acquiring client for agent {} (task={})",
+            agent_name,
+            task.task_id,
+        )
         client = await self._agent_connections.get_client(agent_name)
+        logger.info(
+            "_execute_single_task_run: acquired client for agent {} (task={})",
+            agent_name,
+            task.task_id,
+        )
         if not client:
+            # Emit a TOOL_CALL_COMPLETED with a failure message (no client)
+            yield await self._event_service.emit(
+                self._event_service.factory.tool_call(
+                    task.conversation_id,
+                    thread_id,
+                    task_id=tool_task_id,
+                    event=StreamResponseEvent.TOOL_CALL_COMPLETED,
+                    tool_call_id=tool_call_id,
+                    tool_name=tool_name,
+                    tool_result=f"ERROR: could not connect to agent {agent_name}",
+                )
+            )
             raise RuntimeError(f"Could not connect to agent {agent_name}")
 
+        # Emit a TOOL_CALL_COMPLETED indicating successful client acquisition
+        yield await self._event_service.emit(
+            self._event_service.factory.tool_call(
+                task.conversation_id,
+                thread_id,
+                task_id=tool_task_id,
+                event=StreamResponseEvent.TOOL_CALL_COMPLETED,
+                tool_call_id=tool_call_id,
+                tool_name=tool_name,
+                tool_result="connected",
+            )
+        )
+
+        logger.info(
+            "_execute_single_task_run: sending message to agent {} (task={})",
+            agent_name,
+            task.task_id,
+        )
         remote_response = await client.send_message(
             task.query,
             conversation_id=task.conversation_id,
@@ -375,7 +430,7 @@ class TaskExecutor:
 
             if isinstance(event, TaskArtifactUpdateEvent):
                 logger.info(
-                    "Received unexpected artifact update for task %s: %s",
+                    "Received unexpected artifact update for task {}: {}",
                     task.task_id,
                     event,
                 )
