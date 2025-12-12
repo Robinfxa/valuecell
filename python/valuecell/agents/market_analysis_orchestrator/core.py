@@ -6,19 +6,25 @@ Multi-agent market analysis system that:
 3. Dispatches to flexible execution backends
 """
 
-from typing import Any, AsyncGenerator, Dict, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from loguru import logger
 
 from valuecell.core.agent.responses import streaming
 from valuecell.core.types import BaseAgent, StreamResponse
 
-from .config import get_default_backend, get_enabled_backends, get_llm_for_orchestrator
+from .config import (
+    get_default_backend,
+    get_enabled_analysts,
+    get_enabled_backends,
+    get_llm_for_orchestrator,
+)
 from .execution.backends.direct_order import DirectOrderBackend
 from .execution.backends.grid_strategy import GridStrategyBackend
 from .execution.backends.prompt_strategy import PromptStrategyBackend
 from .execution.backends.quant_strategy import QuantStrategyBackend
 from .execution.dispatcher import ExecutionDispatcher
+from .graph.analysis_graph import AnalysisGraph
 from .internal_agents.trader.trader_ai import TraderAI
 
 
@@ -53,10 +59,14 @@ class MarketAnalysisOrchestrator(BaseAgent):
         llm = get_llm_for_orchestrator()
         self.trader = TraderAI(llm=llm, dispatcher=self.dispatcher)
 
-        # Analysis graph will be initialized lazily
-        self._graph = None
+        # Initialize analysis graph
+        selected_analysts = get_enabled_analysts()
+        self.graph = AnalysisGraph(selected_analysts=selected_analysts)
 
-        logger.info("MarketAnalysisOrchestrator initialized")
+        logger.info(
+            "MarketAnalysisOrchestrator initialized",
+            analysts=selected_analysts,
+        )
 
     def _register_backends(self):
         """Register enabled execution backends."""
@@ -232,23 +242,31 @@ class MarketAnalysisOrchestrator(BaseAgent):
         Returns:
             Analysis report dictionary
         """
-        # TODO: Implement full LangGraph workflow
-        # For now, return placeholder analysis
+        logger.info("Running analysis workflow via AnalysisGraph", symbol=symbol)
 
-        logger.info("Running analysis workflow", symbol=symbol)
+        # Parse market type from symbol
+        parsed = self._parse_query(query)
+        market_type = parsed.get("market_type", "china")
 
+        # Use current date for analysis
+        from datetime import date
+
+        trade_date = date.today().isoformat()
+
+        # Run the analysis graph
+        analysis_report = await self.graph.propagate(
+            ticker=symbol,
+            trade_date=trade_date,
+            market_type=market_type,
+        )
+
+        # Get risk assessment
+        risk_assessment = self.graph.get_risk_assessment()
+
+        # Combine into final report
         return {
-            "market_analysis": f"市场技术分析: {symbol} 当前处于震荡区间",
-            "fundamentals_analysis": f"基本面分析: {symbol} 财务状况良好，PE 合理",
-            "news_analysis": "新闻分析: 暂无重大新闻事件",
-            "social_analysis": "社交媒体分析: 市场情绪中性",
-            "research_summary": "多空研究: 多方略占优势",
-            "risk_assessment": {
-                "risk_level": "medium",
-                "aggressive_view": "可以适度加仓",
-                "conservative_view": "建议观望",
-                "neutral_view": "小仓位试探",
-            },
-            "recommendation": "hold",
+            **analysis_report,
+            "risk_assessment": risk_assessment,
             "confidence": 0.65,
         }
+
