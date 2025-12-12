@@ -1,0 +1,95 @@
+"""Risk Manager - Final risk decision maker.
+
+Summarizes risk debate and makes final risk assessment.
+"""
+
+from typing import Any, Callable, Dict, Optional
+
+from loguru import logger
+
+RISK_MANAGER_PROMPT = """作为首席风险官，你的职责是综合评估风险辩论并做出最终决策。
+
+## 交易员决策
+{trader_decision}
+
+## 风险辩论历史
+{risk_history}
+
+## 各方观点
+激进观点：{risky_response}
+保守观点：{safe_response}
+中性观点：{neutral_response}
+
+## 你的任务
+1. 综合评估三方观点
+2. 确定风险等级：低/中/高
+3. 给出具体的仓位建议
+4. 设定止损和止盈策略
+5. 做出最终决策
+
+请用中文输出最终的风险评估和建议。
+"""
+
+
+def create_risk_manager(llm: Any = None) -> Callable:
+    """Create risk manager node.
+
+    Args:
+        llm: Language model instance (optional)
+
+    Returns:
+        Node function for LangGraph workflow
+    """
+
+    def risk_manager_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        logger.info("👔 [风险经理] 开始最终评估")
+
+        trader_decision = state.get("trader_investment_plan", "")
+
+        # Get risk debate state
+        risk_state = state.get("risk_debate_state") or {}
+        risk_history = risk_state.get("history", "")
+        risky_response = risk_state.get("current_risky_response", "")
+        safe_response = risk_state.get("current_safe_response", "")
+        neutral_response = risk_state.get("current_neutral_response", "")
+
+        prompt = RISK_MANAGER_PROMPT.format(
+            trader_decision=trader_decision or "待评估",
+            risk_history=risk_history or "无辩论历史",
+            risky_response=risky_response or "暂无",
+            safe_response=safe_response or "暂无",
+            neutral_response=neutral_response or "暂无",
+        )
+
+        try:
+            if llm is not None:
+                response = llm.invoke(prompt)
+                decision = response.content if hasattr(response, "content") else str(response)
+            else:
+                decision = "风险评估: 综合分析后，风险等级为中等，建议控制仓位在30%以内，设置5%止损"
+        except Exception as e:
+            logger.exception(f"❌ [风险经理] 决策失败: {e}")
+            decision = f"风险评估失败: {e}"
+
+        # Update risk debate state with final decision
+        new_risk_state = {
+            "judge_decision": decision,
+            "history": risk_state.get("history", ""),
+            "risky_history": risk_state.get("risky_history", ""),
+            "safe_history": risk_state.get("safe_history", ""),
+            "neutral_history": risk_state.get("neutral_history", ""),
+            "latest_speaker": "Risk Manager",
+            "current_risky_response": risk_state.get("current_risky_response", ""),
+            "current_safe_response": risk_state.get("current_safe_response", ""),
+            "current_neutral_response": risk_state.get("current_neutral_response", ""),
+            "count": risk_state.get("count", 0),
+        }
+
+        logger.info(f"✅ [风险经理] 完成，决策长度: {len(decision)}")
+
+        return {
+            "risk_debate_state": new_risk_state,
+            "final_trade_decision": decision,
+        }
+
+    return risk_manager_node
