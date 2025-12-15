@@ -170,6 +170,12 @@ const AppSidebar: FC = () => {
           label: "Market",
           to: "/market",
         },
+        {
+          id: "orchestrator",
+          icon: null, // Will use emoji instead
+          label: "智能分析",
+          to: "/orchestrator",
+        },
       ],
       config: [
         {
@@ -206,7 +212,11 @@ const AppSidebar: FC = () => {
                   data-active={verifyActive(item.to)}
                   className="bg-white p-2"
                 >
-                  <SvgIcon name={item.icon} />
+                  {item.icon ? (
+                    <SvgIcon name={item.icon} />
+                  ) : (
+                    <span className="text-lg">🎯</span>
+                  )}
                 </SidebarMenuItem>
               </NavLink>
             );

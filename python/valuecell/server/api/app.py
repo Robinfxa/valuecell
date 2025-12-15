@@ -29,6 +29,7 @@ from .routers.system import create_system_router
 from .routers.task import create_task_router
 from .routers.user_profile import create_user_profile_router
 from .routers.watchlist import create_watchlist_router
+from .routers.orchestrator import create_orchestrator_router
 from .schemas import AppInfoData, SuccessResponse
 
 
@@ -235,6 +236,9 @@ def _add_routes(app: FastAPI, settings) -> None:
 
     # Include task router
     app.include_router(create_task_router(), prefix=API_PREFIX)
+
+    # Include orchestrator router
+    app.include_router(create_orchestrator_router(), prefix=API_PREFIX)
 
 
 # For uvicorn
