@@ -1,40 +1,15 @@
 """Conservative Risk Debater - Risk-averse advocate.
 
 Advocates for capital preservation and cautious approach.
+Uses TemplateManager for dynamic prompt loading.
 """
 
 from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
 
-SAFE_DEBATER_PROMPT = """作为保守风险分析师，你的职责是强调资本保护和风险规避。
-
-## 交易员决策
-{trader_decision}
-
-## 可用信息
-市场研究报告：{market_report}
-情绪报告：{sentiment_report}
-新闻报告：{news_report}
-基本面报告：{fundamentals_report}
-
-## 对话历史
-{risk_history}
-
-## 激进分析师观点
-{risky_response}
-
-## 中性分析师观点
-{neutral_response}
-
-## 你的任务
-- 强调潜在风险和下行可能
-- 建议谨慎的仓位管理
-- 质疑过于乐观的假设
-- 提出风险控制措施
-
-请用中文以对话方式输出论点。
-"""
+from ..analysts.base import get_prompt_template
+from ...prompts import AgentType
 
 
 def create_safe_debater(llm: Any = None) -> Callable:
@@ -64,7 +39,10 @@ def create_safe_debater(llm: Any = None) -> Callable:
         risky_response = risk_state.get("current_risky_response", "")
         neutral_response = risk_state.get("current_neutral_response", "")
 
-        prompt = SAFE_DEBATER_PROMPT.format(
+        # Load template dynamically
+        template_content = get_prompt_template(AgentType.SAFE_DEBATER)
+        
+        prompt = template_content.format(
             trader_decision=trader_decision or "待评估",
             market_report=market_report or "暂无",
             sentiment_report=sentiment_report or "暂无",

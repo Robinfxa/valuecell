@@ -1,40 +1,15 @@
 """Aggressive Risk Debater - High-risk tolerance advocate.
 
 Advocates for aggressive risk-taking to maximize returns.
+Uses TemplateManager for dynamic prompt loading.
 """
 
 from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
 
-RISKY_DEBATER_PROMPT = """作为激进风险分析师，你的职责是积极倡导高回报、高风险的投资机会。
-
-## 交易员决策
-{trader_decision}
-
-## 可用信息
-市场研究报告：{market_report}
-情绪报告：{sentiment_report}
-新闻报告：{news_report}
-基本面报告：{fundamentals_report}
-
-## 对话历史
-{risk_history}
-
-## 保守分析师观点
-{safe_response}
-
-## 中性分析师观点
-{neutral_response}
-
-## 你的任务
-- 强调潜在的上涨空间和增长潜力
-- 挑战保守和中性观点的谨慎态度
-- 用数据驱动的反驳进行论证
-- 突出承担风险的好处
-
-请用中文以对话方式输出论点。
-"""
+from ..analysts.base import get_prompt_template
+from ...prompts import AgentType
 
 
 def create_risky_debater(llm: Any = None) -> Callable:
@@ -64,7 +39,10 @@ def create_risky_debater(llm: Any = None) -> Callable:
         safe_response = risk_state.get("current_safe_response", "")
         neutral_response = risk_state.get("current_neutral_response", "")
 
-        prompt = RISKY_DEBATER_PROMPT.format(
+        # Load template dynamically
+        template_content = get_prompt_template(AgentType.RISKY_DEBATER)
+        
+        prompt = template_content.format(
             trader_decision=trader_decision or "待评估",
             market_report=market_report or "暂无",
             sentiment_report=sentiment_report or "暂无",

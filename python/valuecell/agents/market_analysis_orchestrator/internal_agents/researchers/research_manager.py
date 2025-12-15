@@ -1,34 +1,15 @@
 """Research Manager - Debate moderator and decision maker.
 
 Summarizes the bull/bear debate and makes investment recommendation.
+Uses TemplateManager for dynamic prompt loading.
 """
 
 from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
 
-RESEARCH_MANAGER_PROMPT = """作为投资组合经理和辩论主持人，你的职责是批判性地评估这轮辩论并做出明确决策。
-
-## 综合分析报告
-市场研究：{market_report}
-情绪分析：{sentiment_report}
-新闻分析：{news_report}
-基本面分析：{fundamentals_report}
-
-## 辩论历史
-{debate_history}
-
-## 你的任务
-1. 简洁地总结双方的关键观点
-2. 做出明确决策：买入、卖出或持有
-3. 提供投资计划，包括：
-   - 建议理由
-   - 战略行动
-   - 目标价格区间
-   - 风险提示
-
-请用中文以对话方式撰写分析，避免使用特殊格式。
-"""
+from ..analysts.base import get_prompt_template
+from ...prompts import AgentType
 
 
 def create_research_manager(llm: Any = None) -> Callable:
@@ -54,7 +35,10 @@ def create_research_manager(llm: Any = None) -> Callable:
         invest_state = state.get("investment_debate_state") or {}
         debate_history = invest_state.get("history", "")
 
-        prompt = RESEARCH_MANAGER_PROMPT.format(
+        # Load template dynamically
+        template_content = get_prompt_template(AgentType.RESEARCH_MANAGER)
+        
+        prompt = template_content.format(
             market_report=market_report or "暂无",
             sentiment_report=sentiment_report or "暂无",
             news_report=news_report or "暂无",

@@ -1,34 +1,15 @@
 """Bear Researcher - Bearish argument agent.
 
-Builds the case for selling/avoiding based on risk factors.
+Builds the case for caution/selling based on risk factors.
+Uses TemplateManager for dynamic prompt loading.
 """
 
 from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
 
-BEAR_RESEARCHER_PROMPT = """你是一位看跌分析师，负责为股票 {company_name}（{ticker}）提出谨慎的论证。
-
-## 你的任务
-构建基于证据的论点，强调风险因素、估值担忧和潜在问题。
-
-## 可用信息
-市场研究报告：{market_report}
-社交媒体情绪报告：{sentiment_report}
-新闻报告：{news_report}
-基本面报告：{fundamentals_report}
-
-辩论历史：{debate_history}
-最后的看涨论点：{bull_response}
-
-## 请重点关注
-- 风险因素：突出公司面临的挑战和不确定性
-- 估值问题：分析当前估值是否合理
-- 竞争威胁：指出竞争对手和市场变化的影响
-- 反驳看涨观点：用具体数据质疑过于乐观的假设
-
-请使用中文回答，以对话风格呈现你的论点。
-"""
+from ..analysts.base import get_prompt_template, get_company_name, get_currency_info
+from ...prompts import AgentType
 
 
 def create_bear_researcher(llm: Any = None) -> Callable:
@@ -47,10 +28,11 @@ def create_bear_researcher(llm: Any = None) -> Callable:
         ticker = state.get("company_of_interest", "UNKNOWN")
         market_type = state.get("market_type", "china")
 
-        # Get company name
-        from ..analysts.base import get_company_name
+        # Get company name and currency info
+        from ..analysts.base import get_company_name, get_currency_info
 
         company_name = get_company_name(ticker, market_type)
+        currency_info = get_currency_info(market_type)
 
         # Get reports
         market_report = state.get("market_report", "")
@@ -63,16 +45,26 @@ def create_bear_researcher(llm: Any = None) -> Callable:
         debate_history = invest_state.get("history", "")
         bull_response = invest_state.get("current_response", "")
         bear_history = invest_state.get("bear_history", "")
+        
+        # Get past memories (if available)
+        past_memories = state.get("past_memories", "暂无历史记忆")
 
-        prompt = BEAR_RESEARCHER_PROMPT.format(
+        # Load template dynamically
+        template_content = get_prompt_template(AgentType.BEAR_RESEARCHER)
+        
+        prompt = template_content.format(
             company_name=company_name,
             ticker=ticker,
+            market_type=market_type,
+            currency_name=currency_info["currency_name"],
+            currency_symbol=currency_info["currency_symbol"],
             market_report=market_report or "暂无",
             sentiment_report=sentiment_report or "暂无",
             news_report=news_report or "暂无",
             fundamentals_report=fundamentals_report or "暂无",
             debate_history=debate_history or "无历史",
             bull_response=bull_response or "无看涨论点",
+            past_memories=past_memories,
         )
 
         try:
@@ -80,7 +72,7 @@ def create_bear_researcher(llm: Any = None) -> Callable:
                 response = llm.invoke(prompt)
                 argument = response.content if hasattr(response, "content") else str(response)
             else:
-                argument = f"看跌论点: {company_name} 存在估值过高和市场风险，建议谨慎"
+                argument = f"看跌论点: {company_name} 存在估值过高和增长不确定性风险，建议谨慎"
         except Exception as e:
             logger.exception(f"❌ [看跌研究员] 生成失败: {e}")
             argument = f"看跌分析失败: {e}"

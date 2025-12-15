@@ -1,40 +1,15 @@
 """Neutral Risk Debater - Balanced perspective advocate.
 
 Provides balanced view considering both risks and opportunities.
+Uses TemplateManager for dynamic prompt loading.
 """
 
 from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
 
-NEUTRAL_DEBATER_PROMPT = """作为中性风险分析师，你的职责是提供平衡的观点。
-
-## 交易员决策
-{trader_decision}
-
-## 可用信息
-市场研究报告：{market_report}
-情绪报告：{sentiment_report}
-新闻报告：{news_report}
-基本面报告：{fundamentals_report}
-
-## 对话历史
-{risk_history}
-
-## 激进分析师观点
-{risky_response}
-
-## 保守分析师观点
-{safe_response}
-
-## 你的任务
-- 综合考虑风险和机会
-- 提供平衡的仓位建议
-- 指出双方观点的合理之处
-- 提出折中的策略方案
-
-请用中文以对话方式输出论点。
-"""
+from ..analysts.base import get_prompt_template
+from ...prompts import AgentType
 
 
 def create_neutral_debater(llm: Any = None) -> Callable:
@@ -64,7 +39,10 @@ def create_neutral_debater(llm: Any = None) -> Callable:
         risky_response = risk_state.get("current_risky_response", "")
         safe_response = risk_state.get("current_safe_response", "")
 
-        prompt = NEUTRAL_DEBATER_PROMPT.format(
+        # Load template dynamically
+        template_content = get_prompt_template(AgentType.NEUTRAL_DEBATER)
+        
+        prompt = template_content.format(
             trader_decision=trader_decision or "待评估",
             market_report=market_report or "暂无",
             sentiment_report=sentiment_report or "暂无",

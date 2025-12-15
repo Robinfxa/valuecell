@@ -110,7 +110,7 @@ export function AnalysisPanel() {
         ORCHESTRATOR_AGENTS.find((a) => a.type === type);
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6 overflow-y-auto max-h-[calc(100vh-16rem)] pr-2">
             {/* Input Section */}
             <Card>
                 <CardHeader>

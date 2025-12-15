@@ -1,34 +1,15 @@
 """Risk Manager - Final risk decision maker.
 
 Summarizes risk debate and makes final risk assessment.
+Uses TemplateManager for dynamic prompt loading.
 """
 
 from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
 
-RISK_MANAGER_PROMPT = """作为首席风险官，你的职责是综合评估风险辩论并做出最终决策。
-
-## 交易员决策
-{trader_decision}
-
-## 风险辩论历史
-{risk_history}
-
-## 各方观点
-激进观点：{risky_response}
-保守观点：{safe_response}
-中性观点：{neutral_response}
-
-## 你的任务
-1. 综合评估三方观点
-2. 确定风险等级：低/中/高
-3. 给出具体的仓位建议
-4. 设定止损和止盈策略
-5. 做出最终决策
-
-请用中文输出最终的风险评估和建议。
-"""
+from ..analysts.base import get_prompt_template
+from ...prompts import AgentType
 
 
 def create_risk_manager(llm: Any = None) -> Callable:
@@ -53,7 +34,10 @@ def create_risk_manager(llm: Any = None) -> Callable:
         safe_response = risk_state.get("current_safe_response", "")
         neutral_response = risk_state.get("current_neutral_response", "")
 
-        prompt = RISK_MANAGER_PROMPT.format(
+        # Load template dynamically
+        template_content = get_prompt_template(AgentType.RISK_MANAGER)
+        
+        prompt = template_content.format(
             trader_decision=trader_decision or "待评估",
             risk_history=risk_history or "无辩论历史",
             risky_response=risky_response or "暂无",

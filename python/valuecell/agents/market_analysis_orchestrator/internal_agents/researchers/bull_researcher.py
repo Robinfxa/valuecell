@@ -1,34 +1,15 @@
 """Bull Researcher - Bullish argument agent.
 
 Builds the case for buying/holding based on positive indicators.
+Uses TemplateManager for dynamic prompt loading.
 """
 
 from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
 
-BULL_RESEARCHER_PROMPT = """你是一位看涨分析师，负责为股票 {company_name}（{ticker}）的投资建立强有力的论证。
-
-## 你的任务
-构建基于证据的强有力案例，强调增长潜力、竞争优势和积极的市场指标。
-
-## 可用信息
-市场研究报告：{market_report}
-社交媒体情绪报告：{sentiment_report}
-新闻报告：{news_report}
-基本面报告：{fundamentals_report}
-
-辩论历史：{debate_history}
-最后的看跌论点：{bear_response}
-
-## 请重点关注
-- 增长潜力：突出公司的市场机会、收入预测和可扩展性
-- 竞争优势：强调独特产品、强势品牌或主导市场地位
-- 积极指标：使用财务健康状况、行业趋势和最新积极消息作为证据
-- 反驳看跌观点：用具体数据和合理推理批判性分析看跌论点
-
-请使用中文回答，以对话风格呈现你的论点。
-"""
+from ..analysts.base import get_prompt_template, get_company_name, get_currency_info
+from ...prompts import AgentType
 
 
 def create_bull_researcher(llm: Any = None) -> Callable:
@@ -47,10 +28,11 @@ def create_bull_researcher(llm: Any = None) -> Callable:
         ticker = state.get("company_of_interest", "UNKNOWN")
         market_type = state.get("market_type", "china")
 
-        # Get company name
-        from ..analysts.base import get_company_name
+        # Get company name and currency info
+        from ..analysts.base import get_company_name, get_currency_info
 
         company_name = get_company_name(ticker, market_type)
+        currency_info = get_currency_info(market_type)
 
         # Get reports
         market_report = state.get("market_report", "")
@@ -63,16 +45,26 @@ def create_bull_researcher(llm: Any = None) -> Callable:
         debate_history = invest_state.get("history", "")
         bear_response = invest_state.get("current_response", "")
         bull_history = invest_state.get("bull_history", "")
+        
+        # Get past memories (if available)
+        past_memories = state.get("past_memories", "暂无历史记忆")
 
-        prompt = BULL_RESEARCHER_PROMPT.format(
+        # Load template dynamically
+        template_content = get_prompt_template(AgentType.BULL_RESEARCHER)
+        
+        prompt = template_content.format(
             company_name=company_name,
             ticker=ticker,
+            market_type=market_type,
+            currency_name=currency_info["currency_name"],
+            currency_symbol=currency_info["currency_symbol"],
             market_report=market_report or "暂无",
             sentiment_report=sentiment_report or "暂无",
             news_report=news_report or "暂无",
             fundamentals_report=fundamentals_report or "暂无",
             debate_history=debate_history or "无历史",
             bear_response=bear_response or "无看跌论点",
+            past_memories=past_memories,
         )
 
         try:

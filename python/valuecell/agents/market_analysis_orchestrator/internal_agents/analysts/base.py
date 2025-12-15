@@ -9,6 +9,45 @@ from typing import Any, Callable, Dict, Optional
 from loguru import logger
 
 
+# ===== Template Manager Singleton =====
+
+_template_manager = None
+
+
+def get_template_manager():
+    """Get the singleton TemplateManager instance."""
+    global _template_manager
+    if _template_manager is None:
+        from ...prompts import TemplateManager
+        _template_manager = TemplateManager()
+    return _template_manager
+
+
+def get_prompt_template(agent_type: str) -> str:
+    """Get prompt template content from TemplateManager.
+    
+    Args:
+        agent_type: Type of agent (from AgentType constants)
+        
+    Returns:
+        Template content string, or empty string if not found
+    """
+    tm = get_template_manager()
+    template = tm.get_default_template(agent_type)
+    if template:
+        logger.debug(f"Loaded template for {agent_type}: {template.name}")
+        return template.content
+    logger.warning(f"No template found for {agent_type}, using empty")
+    return ""
+
+
+def reload_templates() -> None:
+    """Force reload templates (e.g., after editing via API)."""
+    global _template_manager
+    _template_manager = None
+    logger.info("Template manager reset, will reload on next access")
+
+
 def get_company_name(ticker: str, market_type: str) -> str:
     """Get company name from ticker symbol.
 
