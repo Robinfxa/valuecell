@@ -217,12 +217,16 @@ class MarketAnalysisOrchestrator(BaseAgent):
             return result
 
         # US stocks: AAPL, GOOGL, etc.
-        us_pattern = r"\b([A-Z]{1,5})\b"
         # Only match if it looks like someone is asking about a specific stock
+        # Exclude common words that might be mistaken for tickers
+        EXCLUDED_WORDS = {"I", "A", "PE", "EPS", "AI", "API", "US", "UK", "EU", "ETF", "IPO", "CEO", "AI", "SEC"}
+        us_pattern = r"\b([A-Z]{2,5})\b"  # Require at least 2 letters
         if any(kw in query.lower() for kw in ["analyze", "分析", "stock", "股票"]):
-            us_match = re.search(us_pattern, query)
-            if us_match:
-                result["symbol"] = us_match.group(1)
+            us_matches = re.findall(us_pattern, query)
+            # Filter out common words
+            valid_matches = [m for m in us_matches if m not in EXCLUDED_WORDS]
+            if valid_matches:
+                result["symbol"] = valid_matches[0]
                 result["market_type"] = "us"
                 return result
 
@@ -248,10 +252,15 @@ class MarketAnalysisOrchestrator(BaseAgent):
         parsed = self._parse_query(query)
         market_type = parsed.get("market_type", "china")
 
-        # Use current date for analysis
+        # Try to extract date from query (e.g., "分析2025-12-01的行情")
         from datetime import date
 
-        trade_date = date.today().isoformat()
+        date_pattern = r"\d{4}-\d{2}-\d{2}"
+        date_match = re.search(date_pattern, query)
+        if date_match:
+            trade_date = date_match.group()
+        else:
+            trade_date = date.today().isoformat()
 
         # Run the analysis graph
         analysis_report = await self.graph.propagate(

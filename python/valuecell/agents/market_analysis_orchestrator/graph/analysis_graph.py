@@ -140,29 +140,60 @@ class AnalysisGraph:
         Returns:
             Analyst report string
         """
-        # Placeholder implementation
-        # TODO: Integrate actual analyst logic from TradingAgents-CN
-
         ticker = self._state.get("company_of_interest", "UNKNOWN")
         date = self._state.get("trade_date", "")
+        market_type = self._state.get("market_type", "china")
 
-        reports = {
-            "market": f"市场技术分析: {ticker} 在 {date} 处于震荡区间，MA5 上穿 MA10",
-            "fundamentals": f"基本面分析: {ticker} PE 合理，财务状况健康",
-            "news": f"新闻分析: {ticker} 暂无重大新闻事件",
-            "social": f"社交媒体分析: {ticker} 市场情绪中性偏乐观",
-        }
+        # Get LLM from config (None = use placeholder)
+        llm = self.config.get("llm")
 
-        report = reports.get(analyst_type, f"{analyst_type}分析完成")
+        logger.debug(f"Running {analyst_type} analyst", ticker=ticker)
 
-        # Update state
-        report_key = f"{analyst_type}_report"
-        if report_key == "social_report":
-            report_key = "sentiment_report"
-        if self._state:
+        try:
+            # Import and create the appropriate analyst
+            if analyst_type == "market":
+                from ..internal_agents.analysts import create_market_analyst
+                node_fn = create_market_analyst(llm=llm)
+            elif analyst_type == "fundamentals":
+                from ..internal_agents.analysts import create_fundamentals_analyst
+                node_fn = create_fundamentals_analyst(llm=llm)
+            elif analyst_type == "news":
+                from ..internal_agents.analysts import create_news_analyst
+                node_fn = create_news_analyst(llm=llm)
+            elif analyst_type == "social":
+                from ..internal_agents.analysts import create_social_analyst
+                node_fn = create_social_analyst(llm=llm)
+            else:
+                return f"{analyst_type}分析完成"
+
+            # Run the analyst node
+            result = node_fn(self._state)
+
+            # Handle report key mapping
+            report_key = f"{analyst_type}_report"
+            if analyst_type == "social":
+                report_key = "sentiment_report"
+
+            # Update state with the result
+            if report_key in result:
+                report = result[report_key]
+                self._state[report_key] = report
+                return report
+            else:
+                # Fallback to mock if no report returned
+                report = f"{analyst_type}分析: {ticker} 分析完成"
+                self._state[report_key] = report
+                return report
+
+        except Exception as e:
+            logger.exception(f"Error running {analyst_type} analyst: {e}")
+            report = f"{analyst_type}分析失败: {e}"
+            report_key = f"{analyst_type}_report"
+            if analyst_type == "social":
+                report_key = "sentiment_report"
             self._state[report_key] = report
+            return report
 
-        return report
 
     async def _run_researchers(self) -> None:
         """Run bull and bear researchers."""

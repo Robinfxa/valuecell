@@ -173,8 +173,10 @@ Respond in JSON format ONLY:
         elif hasattr(self.llm, "arun"):
             return await self.llm.arun(prompt)
         else:
-            # Fallback for callable
-            return self.llm(prompt)
+            # Fallback for sync callable - wrap in to_thread to avoid blocking
+            import asyncio
+            result = await asyncio.to_thread(self.llm, prompt)
+            return str(result)
 
     def _parse_decision(
         self, response: str, market_context: Dict[str, Any]
